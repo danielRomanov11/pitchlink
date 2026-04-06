@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase, supabaseConfigErrorMessage } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import type { UserRole } from './auth'
 
 type CompleteProfilePayload = {
@@ -17,7 +17,6 @@ type CompleteProfileResult = {
 
 type IdentityUpdatePayload = {
     fullName: string
-    username: string
 }
 
 type IdentityUpdateResult = {
@@ -26,7 +25,6 @@ type IdentityUpdateResult = {
 }
 
 type ProfileRow = {
-    role: string | null
     birthday: string | null
     position: string | null
     height: number | null
@@ -38,7 +36,6 @@ export type CurrentProfile = {
     userId: string
     email: string
     fullName: string
-    username: string
     role: UserRole
     birthday: string
     position: string
@@ -52,10 +49,6 @@ type CurrentProfileResult = {
     message?: string
     profile?: CurrentProfile
 }
-
-const missingConfigMessage =
-    supabaseConfigErrorMessage ??
-    'Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to continue.'
 
 const normalizeText = (value?: string) => {
     const normalizedValue = value?.trim() ?? ''
@@ -86,17 +79,6 @@ const buildNameFromEmail = (email: string) => {
         .join(' ')
 }
 
-const normalizeUsername = (value: string) => value.trim().toLowerCase()
-
-const getUsernameFromMetadata = (value: unknown) => {
-    if (typeof value !== 'string') {
-        return null
-    }
-
-    const normalizedValue = normalizeUsername(value)
-    return normalizedValue.length > 0 ? normalizedValue : null
-}
-
 const getNameFromMetadata = (value: unknown) => {
     if (typeof value !== 'string') {
         return null
@@ -106,129 +88,225 @@ const getNameFromMetadata = (value: unknown) => {
     return normalizedValue.length > 0 ? normalizedValue : null
 }
 
+const missingConfigMessage = 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+
+const toCurrentProfile = (
+    user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
+    appUser: { email: string; name: string; role: UserRole },
+    player: ProfileRow | null,
+): CurrentProfile => ({
+    userId: user.id,
+    email: appUser.email || user.email || '',
+    fullName: appUser.name,
+    role: appUser.role,
+    birthday: player?.birthday ?? '',
+    position: player?.position ?? '',
+    height: player?.height === null || player?.height === undefined ? '' : String(player.height),
+    bio: player?.bio ?? '',
+    videoUrl: player?.url ?? '',
+})
+
+const parseHeight = (height?: string) => {
+    if (!height || height.trim().length === 0) {
+        return null
+    }
+
+    const parsedHeight = Number(height)
+
+    if (!Number.isFinite(parsedHeight)) {
+        return null
+    }
+
+    return Math.round(parsedHeight)
+}
+
+const getCurrentAuthUser = async () => {
+    if (!supabase) {
+        return { user: null as null | { id: string; email?: string | null; user_metadata?: Record<string, unknown> } }
+    }
+
+    const { data, error } = await supabase.auth.getUser()
+
+    if (error || !data.user) {
+        return { user: null }
+    }
+
+    return { user: data.user }
+}
+
 export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
 
-    const {
-        data: { user },
-        error: userError,
-    } = await supabase.auth.getUser()
+    const { user } = await getCurrentAuthUser()
 
-    if (userError || !user) {
-        return { ok: false, message: 'Sign in to view your profile.' }
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
     }
 
-    const { data, error } = await supabase
-        .from('profile')
-        .select('role, birthday, position, height, bio, url')
-        .eq('user_id', user.id)
-        .maybeSingle<ProfileRow>()
+    const metadataRole = parseRole(user.user_metadata?.role)
+    const metadataName = getNameFromMetadata(user.user_metadata?.name)
 
-    if (error) {
-        return { ok: false, message: error.message }
+    const { data: appUserRow, error: appUserError } = await supabase
+        .from('app_user')
+        .select('email, name, role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+    if (appUserError) {
+        return { ok: false, message: appUserError.message }
     }
 
-    const fallbackRole = parseRole(user.user_metadata?.role) ?? 'player'
-    const role = parseRole(data?.role) ?? fallbackRole
-    const email = user.email ?? ''
-    const fullName = getNameFromMetadata(user.user_metadata?.full_name) ?? buildNameFromEmail(email)
-    const username = getUsernameFromMetadata(user.user_metadata?.username) ?? normalizeUsername(email.split('@')[0] ?? 'pitchlink')
+    const resolvedRole = parseRole(appUserRow?.role) ?? metadataRole ?? 'player'
+    const resolvedName =
+        typeof appUserRow?.name === 'string' && appUserRow.name.trim().length > 0
+            ? appUserRow.name
+            : metadataName ?? buildNameFromEmail(user.email ?? '')
+    const resolvedEmail = typeof appUserRow?.email === 'string' ? appUserRow.email : user.email ?? ''
+
+    if (!appUserRow) {
+        const { error: insertAppUserError } = await supabase.from('app_user').insert({
+            id: user.id,
+            email: resolvedEmail,
+            name: resolvedName,
+            role: resolvedRole,
+        })
+
+        if (insertAppUserError) {
+            return { ok: false, message: insertAppUserError.message }
+        }
+    }
+
+    let playerRow: ProfileRow | null = null
+
+    if (resolvedRole === 'player') {
+        const { data, error } = await supabase
+            .from('player')
+            .select('birthday, position, height, bio, url')
+            .eq('user_id', user.id)
+            .maybeSingle()
+
+        if (error) {
+            return { ok: false, message: error.message }
+        }
+
+        playerRow = (data as ProfileRow | null) ?? null
+    }
 
     return {
         ok: true,
-        profile: {
-            userId: user.id,
-            email,
-            fullName,
-            username,
-            role,
-            birthday: data?.birthday ?? '',
-            position: data?.position ?? '',
-            height: data?.height === null || data?.height === undefined ? '' : String(data.height),
-            bio: data?.bio ?? '',
-            videoUrl: data?.url ?? '',
-        },
+        profile: toCurrentProfile(
+            user,
+            {
+                email: resolvedEmail,
+                name: resolvedName,
+                role: resolvedRole,
+            },
+            playerRow,
+        ),
     }
 }
 
-export const upsertProfile = async ({
-    role,
-    birthday,
-    position,
-    height,
-    bio,
-    videoUrl,
-}: CompleteProfilePayload): Promise<CompleteProfileResult> => {
+export const upsertProfile = async ({ role, birthday, position, height, bio, videoUrl }: CompleteProfilePayload): Promise<CompleteProfileResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
 
-    const {
-        data: { user },
-        error: userError,
-    } = await supabase.auth.getUser()
+    const { user } = await getCurrentAuthUser()
 
-    if (userError || !user) {
-        return { ok: false, message: 'Sign in to complete your profile.' }
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
     }
 
-    const normalizedHeight = normalizeText(height)
+    const parsedRole = parseRole(role)
 
-    const profileRow: Record<string, string | number | null> = {
-        user_id: user.id,
-        role,
-        birthday: null,
-        position: null,
-        height: null,
-        bio: normalizeText(bio),
-        url: normalizeText(videoUrl),
+    if (!parsedRole) {
+        return { ok: false, message: 'Invalid role.' }
     }
 
-    if (role === 'player') {
-        profileRow.birthday = normalizeText(birthday)
-        profileRow.position = normalizeText(position)
-        profileRow.height = normalizedHeight ? Number(normalizedHeight) : null
+    const nameFromMetadata = getNameFromMetadata(user.user_metadata?.name) ?? buildNameFromEmail(user.email ?? '')
+
+    const { error: upsertAppUserError } = await supabase.from('app_user').upsert(
+        {
+            id: user.id,
+            email: user.email ?? '',
+            name: nameFromMetadata,
+            role: parsedRole,
+        },
+        {
+            onConflict: 'id',
+        },
+    )
+
+    if (upsertAppUserError) {
+        return { ok: false, message: upsertAppUserError.message }
     }
 
-    const { error } = await supabase.from('profile').upsert(profileRow, { onConflict: 'user_id' })
+    if (parsedRole === 'manager') {
+        return { ok: true }
+    }
 
-    if (error) {
-        return { ok: false, message: error.message }
+    const parsedHeight = parseHeight(height)
+
+    const { error: upsertPlayerError } = await supabase.from('player').upsert(
+        {
+            user_id: user.id,
+            birthday: normalizeText(birthday),
+            position: normalizeText(position),
+            height: parsedHeight,
+            bio: normalizeText(bio),
+            url: normalizeText(videoUrl),
+        },
+        {
+            onConflict: 'user_id',
+        },
+    )
+
+    if (upsertPlayerError) {
+        return { ok: false, message: upsertPlayerError.message }
     }
 
     return { ok: true }
 }
 
-export const updateProfileIdentity = async ({ fullName, username }: IdentityUpdatePayload): Promise<IdentityUpdateResult> => {
+export const updateProfileIdentity = async ({ fullName }: IdentityUpdatePayload): Promise<IdentityUpdateResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
 
-    const sanitizedName = fullName.trim()
-    const sanitizedUsername = normalizeUsername(username)
+    const { user } = await getCurrentAuthUser()
 
-    if (sanitizedName.length < 2) {
-        return { ok: false, message: 'Enter a valid name.' }
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
     }
 
-    if (!/^[a-z0-9._-]{3,30}$/.test(sanitizedUsername)) {
-        return {
-            ok: false,
-            message: 'Username must be 3-30 chars and only include lowercase letters, numbers, dots, underscores, or hyphens.',
-        }
+    const normalizedName = fullName.trim()
+
+    if (normalizedName.length < 2) {
+        return { ok: false, message: 'Enter your full name.' }
     }
 
-    const { error } = await supabase.auth.updateUser({
+    const { error: appUserUpdateError } = await supabase
+        .from('app_user')
+        .update({
+            name: normalizedName,
+            email: user.email ?? '',
+        })
+        .eq('id', user.id)
+
+    if (appUserUpdateError) {
+        return { ok: false, message: appUserUpdateError.message }
+    }
+
+    const { error: authUpdateError } = await supabase.auth.updateUser({
         data: {
-            full_name: sanitizedName,
-            username: sanitizedUsername,
+            name: normalizedName,
         },
     })
 
-    if (error) {
-        return { ok: false, message: 'Unable to update profile identity right now. Please try again.' }
+    if (authUpdateError) {
+        return { ok: false, message: authUpdateError.message }
     }
 
     return { ok: true }

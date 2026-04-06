@@ -1,38 +1,20 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-const missingConfigMessage =
-    'Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to continue.'
-const invalidKeyMessage =
-    'Invalid Supabase key detected. Use the public anon or publishable key in frontend env vars, never the service role key.'
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
-const supabaseConfigErrorMessage = (() => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-        return missingConfigMessage
-    }
-
-    if (supabaseAnonKey.includes('service_role')) {
-        return invalidKeyMessage
-    }
-
-    return null
-})()
-
-const isSupabaseConfigured = supabaseConfigErrorMessage === null
-
-let supabase: SupabaseClient | null = null
-
-if (isSupabaseConfigured && supabaseUrl && supabaseAnonKey) {
-    supabase = createClient(supabaseUrl, supabaseAnonKey, {
-        auth: {
-            autoRefreshToken: true,
-            persistSession: true,
-            detectSessionInUrl: true,
-            flowType: 'pkce',
-        },
-    })
+if (!isSupabaseConfigured) {
+    console.warn('Supabase environment variables are missing. Database features are disabled.')
 }
 
-export { isSupabaseConfigured, supabase, supabaseConfigErrorMessage }
+export const supabase = isSupabaseConfigured
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+        },
+    })
+    : null

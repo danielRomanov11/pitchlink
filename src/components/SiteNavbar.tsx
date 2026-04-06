@@ -19,9 +19,6 @@ const SiteNavbar = ({ links, ctaLabel, ctaTo }: SiteNavbarProps) => {
     const navigate = useNavigate()
     const [isSigningOut, setIsSigningOut] = useState(false)
 
-    const isSignInCta = ctaLabel.trim().toLowerCase() === 'sign in'
-    const showSignOutAction = isAuthenticated && isSignInCta
-
     const handleSignOut = async () => {
         if (isSigningOut) {
             return
@@ -46,7 +43,7 @@ const SiteNavbar = ({ links, ctaLabel, ctaTo }: SiteNavbarProps) => {
                     </a>
                 ))}
             </nav>
-            {showSignOutAction ? (
+            {isAuthenticated ? (
                 <button className="ghost-button" type="button" onClick={() => void handleSignOut()} disabled={isSigningOut}>
                     {isSigningOut ? 'Signing Out...' : 'Sign Out'}
                 </button>
