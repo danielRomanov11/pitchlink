@@ -4,9 +4,11 @@ import SiteNavbar from '../components/SiteNavbar'
 
 const HomePage = () => {
     const navLinks = [
-        { label: 'For You', href: '#forYou' },
-        { label: 'Teams', href: '#matching' },
-        { label: 'Listings', href: '#roles' },
+        { label: 'Teams', href: '/teams' },
+        { label: 'Listings', href: '/listings' },
+        { label: 'For You', href: '/for-you' },
+        { label: 'Applications', href: '/applications' },
+        { label: 'Profile', href: '/profile' },
     ]
 
     return (
@@ -25,9 +27,12 @@ const HomePage = () => {
                         <Link className="primary-button" to="/signup">
                             Get Started
                         </Link>
-                        <button className="secondary-button" type="button">
-                            Create Team Listing
-                        </button>
+                        <Link className="secondary-button" to="/listings">
+                            Explore Listings
+                        </Link>
+                        <Link className="secondary-button" to="/profile?preview=player">
+                            Preview Profile Page
+                        </Link>
                     </div>
                 </div>
             </section>

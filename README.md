@@ -1,75 +1,79 @@
-# React + TypeScript + Vite
+# Pitch Link
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Pitch Link is a Vite + React + TypeScript app with Supabase authentication and profile storage.
 
-Currently, two official plugins are available:
+## Supabase Auth Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Install dependencies:
 
-## React Compiler
-
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2. Create a local env file and set public client credentials:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cp .env.example .env.local
 ```
+
+Required variables:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+3. Start the app:
+
+```bash
+npm run dev
+```
+
+## Security Defaults In This App
+
+- Uses Supabase client auth with `flowType: 'pkce'`.
+- Rejects frontend startup when a service-role key is provided.
+- Uses only public env vars (`VITE_...`) in browser code.
+- Protects private routes and redirects unauthenticated users to `/login`.
+- Redirects signed-in users away from `/login` and `/signup`.
+
+## Required Supabase Dashboard Settings
+
+1. In Auth URL configuration:
+- Set Site URL to your app origin (for example `http://localhost:5173` during dev).
+- Add redirect URL: `http://localhost:5173/complete-profile`.
+
+2. Keep email confirmation enabled unless your onboarding requires immediate sessions.
+
+3. Ensure Row Level Security is enabled on `profile` and policies are user-scoped.
+
+Example policy setup:
+
+```sql
+alter table public.profile enable row level security;
+
+create policy "profile_select_own"
+on public.profile
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "profile_insert_own"
+on public.profile
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+create policy "profile_update_own"
+on public.profile
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+```
+
+## Security Checklist
+
+- Never use `service_role` keys in frontend code.
+- Never commit `.env.local`.
+- Keep anon/publishable keys in client only.
+- Apply least-privilege RLS policies to every table exposed to the app.
+- Add a server-side layer for any privileged operations.

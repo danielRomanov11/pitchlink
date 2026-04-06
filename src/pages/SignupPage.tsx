@@ -1,12 +1,19 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import { signUpWithEmail } from '../services/auth'
 
 const SignupPage = () => {
+    const navigate = useNavigate()
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
+    const [selectedRole, setSelectedRole] = useState<'player' | 'manager'>('player')
+
+    const handleRoleChange = (event: ChangeEvent<HTMLSelectElement>) => {
+        setSelectedRole(event.target.value as 'player' | 'manager')
+    }
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
@@ -14,13 +21,20 @@ const SignupPage = () => {
         setStatusType(null)
 
         const formData = new FormData(event.currentTarget)
+        const fullName = String(formData.get('fullName') ?? '').trim()
         const email = String(formData.get('email') ?? '').trim()
         const password = String(formData.get('password') ?? '').trim()
         const confirmPassword = String(formData.get('confirmPassword') ?? '').trim()
 
-        if (!email || !password || !confirmPassword) {
+        if (!fullName || !email || !password || !confirmPassword) {
             setStatusType('error')
             setStatusMessage('Complete all fields before continuing.')
+            return
+        }
+
+        if (fullName.length < 2) {
+            setStatusType('error')
+            setStatusMessage('Enter your full name.')
             return
         }
 
@@ -39,7 +53,7 @@ const SignupPage = () => {
         setIsSubmitting(true)
 
         try {
-            const result = await signUpWithEmail({ email, password })
+            const result = await signUpWithEmail({ fullName, email, password, role: selectedRole })
 
             if (!result.ok) {
                 setStatusType('error')
@@ -47,9 +61,19 @@ const SignupPage = () => {
                 return
             }
 
+            if (result.requiresEmailVerification) {
+                setStatusType('success')
+                setStatusMessage(result.message ?? 'Check your email to verify your account.')
+                return
+            }
+
             setStatusType('success')
             setStatusMessage(result.message ?? 'Account created successfully.')
-            event.currentTarget.reset()
+            navigate(`/complete-profile?role=${selectedRole}`, {
+                state: {
+                    role: selectedRole,
+                },
+            })
         } catch {
             setStatusType('error')
             setStatusMessage('Unexpected error while creating account.')
@@ -67,8 +91,17 @@ const SignupPage = () => {
             footerLinkTo="/login"
         >
             <form className="auth-form" onSubmit={handleSubmit} noValidate>
+                <label htmlFor="fullName">Full name</label>
+                <input id="fullName" name="fullName" type="text" autoComplete="name" minLength={2} required />
+
                 <label htmlFor="email">Email</label>
                 <input id="email" name="email" type="email" autoComplete="email" required />
+
+                <label htmlFor="role">Role</label>
+                <select id="role" name="role" value={selectedRole} onChange={handleRoleChange}>
+                    <option value="player">Player</option>
+                    <option value="manager">Manager</option>
+                </select>
 
                 <label htmlFor="password">Password</label>
                 <input

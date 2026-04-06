@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import { signInWithEmail } from '../services/auth'
 
 const LoginPage = () => {
+    const navigate = useNavigate()
+    const location = useLocation()
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
@@ -37,6 +39,13 @@ const LoginPage = () => {
 
             setStatusType('success')
             setStatusMessage('Signed in successfully.')
+
+            const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from
+            const destinationPath = fromState?.pathname
+                ? `${fromState.pathname}${fromState.search ?? ''}`
+                : '/profile'
+
+            navigate(destinationPath, { replace: true })
         } catch {
             setStatusType('error')
             setStatusMessage('Unexpected error while signing in.')
