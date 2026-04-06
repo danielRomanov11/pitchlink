@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { createContext, useEffect, useMemo, useState } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
+import { createContext, useEffect, useMemo, useState } from 'react'
 import { getActiveSession, subscribeToAuthStateChanges } from '../services/auth'
 
 type AuthContextValue = {

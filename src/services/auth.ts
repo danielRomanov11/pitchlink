@@ -1,5 +1,5 @@
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
-import { isSupabaseConfigured, supabase, supabaseConfigErrorMessage } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 type AuthPayload = {
     email: string
@@ -23,38 +23,61 @@ type AuthSubscription = {
     unsubscribe: () => void
 }
 
-const missingConfigMessage =
-    supabaseConfigErrorMessage ??
-    'Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to continue.'
+type AuthStateCallback = (event: AuthChangeEvent, session: Session | null) => void
 
-const signInErrorMessage = 'Sign in failed. Check your email and password and try again.'
-const signUpErrorMessage = 'Sign up failed. Please try again.'
+const missingConfigMessage = 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
 
-const buildEmailRedirectUrl = () => new URL('/complete-profile', window.location.origin).toString()
-
-type AuthErrorLike = {
-    message: string
-    status?: number
-    code?: string
+const parseRole = (value: unknown): UserRole => {
+    return value === 'manager' ? 'manager' : 'player'
 }
 
-const mapAuthErrorMessage = (error: AuthErrorLike, fallbackMessage: string): string => {
-    const normalizedMessage = error.message.toLowerCase()
-    const normalizedCode = error.code?.toLowerCase()
+const buildNameFromEmail = (email: string) => {
+    const localPart = email.split('@')[0] ?? ''
+    const segments = localPart
+        .split(/[._-]+/)
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)
 
-    if (error.status === 429 || normalizedMessage.includes('rate limit') || normalizedCode?.includes('rate')) {
-        return 'Too many attempts right now. Please wait a minute and try again.'
+    if (segments.length === 0) {
+        return 'Pitch Link User'
     }
 
-    if (normalizedMessage.includes('already registered')) {
-        return 'This email is already registered. Try signing in instead.'
+    return segments
+        .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+        .join(' ')
+}
+
+const buildEmailRedirectUrl = () => {
+    if (typeof window === 'undefined') {
+        return undefined
     }
 
-    if (normalizedMessage.includes('email not confirmed')) {
-        return 'Check your email and confirm your account before signing in.'
+    return new URL('/complete-profile', window.location.origin).toString()
+}
+
+const ensureAppUserRow = async (user: User) => {
+    if (!supabase) {
+        return
     }
 
-    return fallbackMessage
+    const role = parseRole(user.user_metadata?.role)
+    const name =
+        typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim().length > 0
+            ? user.user_metadata.name.trim()
+            : buildNameFromEmail(user.email ?? '')
+
+    await supabase.from('app_user').upsert(
+        {
+            id: user.id,
+            email: user.email ?? '',
+            name,
+            role,
+        },
+        {
+            onConflict: 'id',
+            ignoreDuplicates: true,
+        },
+    )
 }
 
 export const signInWithEmail = async ({ email, password }: AuthPayload): Promise<AuthResult> => {
@@ -62,16 +85,20 @@ export const signInWithEmail = async ({ email, password }: AuthPayload): Promise
         return { ok: false, message: missingConfigMessage }
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-        return { ok: false, message: mapAuthErrorMessage(error, signInErrorMessage) }
+        return { ok: false, message: error.message }
+    }
+
+    if (data.user) {
+        await ensureAppUserRow(data.user)
     }
 
     return { ok: true }
 }
 
-export const signUpWithEmail = async ({ email, password, fullName, role }: SignUpPayload): Promise<AuthResult> => {
+export const signUpWithEmail = async ({ fullName, email, password, role }: SignUpPayload): Promise<AuthResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
@@ -82,25 +109,29 @@ export const signUpWithEmail = async ({ email, password, fullName, role }: SignU
         options: {
             emailRedirectTo: buildEmailRedirectUrl(),
             data: {
-                full_name: fullName.trim(),
                 role,
+                name: fullName,
             },
         },
     })
 
     if (error) {
-        return { ok: false, message: mapAuthErrorMessage(error, signUpErrorMessage) }
+        return { ok: false, message: error.message }
     }
 
-    const requiresEmailVerification = !data.session
-
-    return {
-        ok: true,
-        requiresEmailVerification,
-        message: requiresEmailVerification
-            ? 'Check your email to verify your account. After verification, sign in and complete your profile.'
-            : 'Account created successfully.',
+    if (data.user && data.session) {
+        await ensureAppUserRow(data.user)
     }
+
+    if (!data.session) {
+        return {
+            ok: true,
+            requiresEmailVerification: true,
+            message: 'Check your email to verify your account before signing in.',
+        }
+    }
+
+    return { ok: true }
 }
 
 export const signOut = async (): Promise<AuthResult> => {
@@ -111,7 +142,7 @@ export const signOut = async (): Promise<AuthResult> => {
     const { error } = await supabase.auth.signOut()
 
     if (error) {
-        return { ok: false, message: 'Unable to sign out right now. Please try again.' }
+        return { ok: false, message: error.message }
     }
 
     return { ok: true }
@@ -122,16 +153,13 @@ export const getActiveSession = async (): Promise<Session | null> => {
         return null
     }
 
-    const {
-        data: { session },
-        error,
-    } = await supabase.auth.getSession()
+    const { data, error } = await supabase.auth.getSession()
 
     if (error) {
         return null
     }
 
-    return session
+    return data.session ?? null
 }
 
 export const getCurrentUser = async (): Promise<User | null> => {
@@ -139,25 +167,29 @@ export const getCurrentUser = async (): Promise<User | null> => {
         return null
     }
 
-    const {
-        data: { user },
-        error,
-    } = await supabase.auth.getUser()
+    const { data, error } = await supabase.auth.getUser()
 
     if (error) {
         return null
     }
 
-    return user
+    return data.user ?? null
 }
 
-export const subscribeToAuthStateChanges = (
-    listener: (event: AuthChangeEvent, session: Session | null) => void,
-): AuthSubscription | null => {
+export const subscribeToAuthStateChanges = (callback: AuthStateCallback): AuthSubscription | null => {
     if (!isSupabaseConfigured || !supabase) {
         return null
     }
 
-    const { data } = supabase.auth.onAuthStateChange(listener)
-    return data.subscription
+    const {
+        data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+        callback(event, session)
+    })
+
+    return {
+        unsubscribe: () => {
+            subscription.unsubscribe()
+        },
+    }
 }

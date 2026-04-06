@@ -109,7 +109,6 @@ const ProfilePage = () => {
     const [heightFeetInput, setHeightFeetInput] = useState('')
     const [heightInchesInput, setHeightInchesInput] = useState('')
     const [fullNameInput, setFullNameInput] = useState('')
-    const [usernameInput, setUsernameInput] = useState('')
     const [bioInput, setBioInput] = useState('')
     const [videoUrlInput, setVideoUrlInput] = useState('')
 
@@ -124,55 +123,52 @@ const ProfilePage = () => {
     useEffect(() => {
         const params = new URLSearchParams(location.search)
         const previewRole = params.get('preview')
-        setIsEditorOpen(false)
-
-        if (previewRole === 'player' || previewRole === 'manager') {
-            setIsPreviewMode(true)
-            // Demo preview mode
-            const demoProfile: CurrentProfile = previewRole === 'player'
-                ? {
-                    userId: 'demo-player-123',
-                    email: 'player.demo@pitchlink.com',
-                    fullName: 'Player Demo',
-                    username: 'player.demo',
-                    role: 'player',
-                    birthday: '2002-05-15',
-                    position: 'Striker, Right Winger',
-                    height: '180',
-                    bio: 'Aggressive forward with a knack for late runs. Looking for a team that values pace and finishing.',
-                    videoUrl: 'https://www.youtube.com/watch?v=playerdemo',
-                }
-                : {
-                    userId: 'demo-manager-456',
-                    email: 'manager.demo@pitchlink.com',
-                    fullName: 'Manager Demo',
-                    username: 'manager.demo',
-                    role: 'manager',
-                    birthday: '',
-                    position: '',
-                    height: '',
-                    bio: 'Manager for City United FC. Focused on building a dynamic, youth-driven squad for the upcoming season.',
-                    videoUrl: 'https://www.youtube.com/watch?v=managerdemo',
-                }
-            setProfile(demoProfile)
-            setBirthdayInput(demoProfile.birthday)
-            setSelectedPositions(splitPositions(demoProfile.position))
-            setHeightUnit('metric')
-            setHeightMetricInput(demoProfile.height)
-            setHeightFeetInput('')
-            setHeightInchesInput('')
-            setFullNameInput(demoProfile.fullName)
-            setUsernameInput(demoProfile.username)
-            setBioInput(demoProfile.bio)
-            setVideoUrlInput(demoProfile.videoUrl)
-            setIsLoading(false)
-            setLoadMessage(null)
-            return
-        }
-
-        setIsPreviewMode(false)
 
         const loadProfile = async () => {
+            if (previewRole === 'player' || previewRole === 'manager') {
+                setIsPreviewMode(true)
+
+                const demoProfile: CurrentProfile =
+                    previewRole === 'player'
+                        ? {
+                            userId: 'demo-player-123',
+                            email: 'player.demo@pitchlink.com',
+                            fullName: 'Player Demo',
+                            role: 'player',
+                            birthday: '2002-05-15',
+                            position: 'Striker, Right Winger',
+                            height: '180',
+                            bio: 'Aggressive forward with a knack for late runs. Looking for a team that values pace and finishing.',
+                            videoUrl: 'https://www.youtube.com/watch?v=playerdemo',
+                        }
+                        : {
+                            userId: 'demo-manager-456',
+                            email: 'manager.demo@pitchlink.com',
+                            fullName: 'Manager Demo',
+                            role: 'manager',
+                            birthday: '',
+                            position: '',
+                            height: '',
+                            bio: 'Manager for City United FC. Focused on building a dynamic, youth-driven squad for the upcoming season.',
+                            videoUrl: 'https://www.youtube.com/watch?v=managerdemo',
+                        }
+
+                setProfile(demoProfile)
+                setBirthdayInput(demoProfile.birthday)
+                setSelectedPositions(splitPositions(demoProfile.position))
+                setHeightUnit('metric')
+                setHeightMetricInput(demoProfile.height)
+                setHeightFeetInput('')
+                setHeightInchesInput('')
+                setFullNameInput(demoProfile.fullName)
+                setBioInput(demoProfile.bio)
+                setVideoUrlInput(demoProfile.videoUrl)
+                setIsLoading(false)
+                setLoadMessage(null)
+                return
+            }
+
+            setIsPreviewMode(false)
             setIsLoading(true)
             setLoadMessage(null)
 
@@ -194,7 +190,6 @@ const ProfilePage = () => {
             setHeightFeetInput('')
             setHeightInchesInput('')
             setFullNameInput(loadedProfile.fullName)
-            setUsernameInput(loadedProfile.username)
             setBioInput(loadedProfile.bio)
             setVideoUrlInput(loadedProfile.videoUrl)
             setIsLoading(false)
@@ -339,19 +334,10 @@ const ProfilePage = () => {
         const isPlayer = profile.role === 'player'
         const heightValidation = getHeightValidation()
         const sanitizedName = fullNameInput.trim()
-        const sanitizedUsername = usernameInput.trim().toLowerCase()
 
         if (sanitizedName.length < 2) {
             setStatusType('error')
             setStatusMessage('Enter your full name.')
-            return
-        }
-
-        if (!/^[a-z0-9._-]{3,30}$/.test(sanitizedUsername)) {
-            setStatusType('error')
-            setStatusMessage(
-                'Username must be 3-30 chars and only include lowercase letters, numbers, dots, underscores, or hyphens.',
-            )
             return
         }
 
@@ -373,12 +359,11 @@ const ProfilePage = () => {
                 return {
                     ...previousProfile,
                     fullName: sanitizedName,
-                    username: sanitizedUsername,
                     birthday: isPlayer ? birthdayInput : '',
                     position: isPlayer ? positionValue : '',
                     height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
-                    bio: bioInput,
-                    videoUrl: videoUrlInput,
+                    bio: isPlayer ? bioInput : '',
+                    videoUrl: isPlayer ? videoUrlInput : '',
                 }
             })
 
@@ -391,7 +376,6 @@ const ProfilePage = () => {
 
         const identityResult = await updateProfileIdentity({
             fullName: sanitizedName,
-            username: sanitizedUsername,
         })
 
         if (!identityResult.ok) {
@@ -406,8 +390,8 @@ const ProfilePage = () => {
             birthday: isPlayer ? birthdayInput : '',
             position: isPlayer ? positionValue : '',
             height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
-            bio: bioInput,
-            videoUrl: videoUrlInput,
+            bio: isPlayer ? bioInput : '',
+            videoUrl: isPlayer ? videoUrlInput : '',
         })
 
         if (!result.ok) {
@@ -425,12 +409,11 @@ const ProfilePage = () => {
             return {
                 ...previousProfile,
                 fullName: sanitizedName,
-                username: sanitizedUsername,
                 birthday: isPlayer ? birthdayInput : '',
                 position: isPlayer ? positionValue : '',
                 height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
-                bio: bioInput,
-                videoUrl: videoUrlInput,
+                bio: isPlayer ? bioInput : '',
+                videoUrl: isPlayer ? videoUrlInput : '',
             }
         })
 
@@ -442,7 +425,7 @@ const ProfilePage = () => {
     const heightValidation = getHeightValidation()
 
     const displayName = profile ? profile.fullName : ''
-    const handleName = profile ? profile.username : 'pitchlink'
+    const handleName = profile ? profile.email.split('@')[0] ?? 'pitchlink' : 'pitchlink'
     const profileInitials = buildInitials(displayName)
     const positionTags = selectedPositions.filter((position) => position.length > 0)
 
@@ -597,18 +580,6 @@ const ProfilePage = () => {
                                             required
                                         />
 
-                                        <label htmlFor="username">Username</label>
-                                        <input
-                                            id="username"
-                                            type="text"
-                                            autoComplete="username"
-                                            pattern="^[a-z0-9._-]{3,30}$"
-                                            title="3-30 chars: lowercase letters, numbers, dots, underscores, or hyphens."
-                                            value={usernameInput}
-                                            onChange={(event) => setUsernameInput(event.target.value.toLowerCase())}
-                                            required
-                                        />
-
                                         <label htmlFor="email">Email</label>
                                         <input id="email" value={profile.email} readOnly disabled />
 
@@ -739,33 +710,31 @@ const ProfilePage = () => {
                                             </p>
                                         )}
 
-                                        <label htmlFor="bio">{profile.role === 'player' ? 'Bio' : 'Organization Bio'}</label>
-                                        <textarea
-                                            id="bio"
-                                            rows={4}
-                                            value={bioInput}
-                                            onChange={(event) => setBioInput(event.target.value)}
-                                            placeholder={
-                                                profile.role === 'player'
-                                                    ? 'Share your style of play, strengths, and goals.'
-                                                    : 'Describe your club, recruiting style, and priorities.'
-                                            }
-                                        />
+                                        {profile.role === 'player' ? (
+                                            <>
+                                                <label htmlFor="bio">Bio</label>
+                                                <textarea
+                                                    id="bio"
+                                                    rows={4}
+                                                    value={bioInput}
+                                                    onChange={(event) => setBioInput(event.target.value)}
+                                                    placeholder="Share your style of play, strengths, and goals."
+                                                />
 
-                                        <label htmlFor="videoUrl">
-                                            {profile.role === 'player' ? 'Highlight Video URL' : 'Team or Recruitment Video URL'}
-                                        </label>
-                                        <input
-                                            id="videoUrl"
-                                            type="url"
-                                            value={videoUrlInput}
-                                            onChange={(event) => setVideoUrlInput(event.target.value)}
-                                            placeholder={
-                                                profile.role === 'player'
-                                                    ? 'https://your-highlight-video-link'
-                                                    : 'https://your-team-video-link'
-                                            }
-                                        />
+                                                <label htmlFor="videoUrl">Highlight Video URL</label>
+                                                <input
+                                                    id="videoUrl"
+                                                    type="url"
+                                                    value={videoUrlInput}
+                                                    onChange={(event) => setVideoUrlInput(event.target.value)}
+                                                    placeholder="https://your-highlight-video-link"
+                                                />
+                                            </>
+                                        ) : (
+                                            <p className="auth-helper-text">
+                                                Manager profiles only store your identity role and name in this release.
+                                            </p>
+                                        )}
 
                                         <button className="primary-button" type="submit" disabled={isSaving}>
                                             {isSaving ? 'Saving changes...' : isPreviewMode ? 'Update preview' : 'Save changes'}

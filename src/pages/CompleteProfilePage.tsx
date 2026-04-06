@@ -252,7 +252,7 @@ const CompleteProfilePage = () => {
             setStatusType('success')
             setStatusMessage('Profile saved. Redirecting...')
             setTimeout(() => {
-                navigate('/')
+                navigate('/profile')
             }, 500)
         } catch {
             setStatusType('error')

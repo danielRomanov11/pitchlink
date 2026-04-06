@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
-
-type RoleView = 'player' | 'manager'
+import type { UserRole } from '../services/auth'
+import { getCurrentProfile } from '../services/profile'
 
 const ForYouPage = () => {
-    const [roleView, setRoleView] = useState<RoleView>('player')
+    const [role, setRole] = useState<UserRole>('player')
 
     const navLinks = [
         { label: 'Teams', href: '/teams' },
@@ -14,6 +14,20 @@ const ForYouPage = () => {
         { label: 'Applications', href: '/applications' },
         { label: 'Profile', href: '/profile' },
     ]
+
+    useEffect(() => {
+        const loadRole = async () => {
+            const result = await getCurrentProfile()
+
+            if (!result.ok || !result.profile) {
+                return
+            }
+
+            setRole(result.profile.role)
+        }
+
+        void loadRole()
+    }, [])
 
     return (
         <main className="app-page foryou-page">
@@ -28,32 +42,12 @@ const ForYouPage = () => {
                 </div>
             </section>
 
-            <section className="app-section role-switcher-shell" aria-label="Role view switcher">
-                <p className="section-label">Recommendation mode</p>
-                <div className="role-switcher" role="group" aria-label="Select recommendation role">
-                    <button
-                        className={`secondary-button role-switcher-button ${roleView === 'player' ? 'active' : ''}`}
-                        type="button"
-                        onClick={() => setRoleView('player')}
-                    >
-                        Player View
-                    </button>
-                    <button
-                        className={`secondary-button role-switcher-button ${roleView === 'manager' ? 'active' : ''}`}
-                        type="button"
-                        onClick={() => setRoleView('manager')}
-                    >
-                        Manager View
-                    </button>
-                </div>
-            </section>
-
             <section className="app-section foryou-page-grid" aria-label="Recommendation modules">
                 <article className="app-card">
                     <p className="card-kicker">Match Signals</p>
-                    <h3>{roleView === 'player' ? 'Best fit listings' : 'Best fit players'}</h3>
+                    <h3>{role === 'player' ? 'Best fit listings' : 'Best fit players'}</h3>
                     <p>
-                        {roleView === 'player'
+                        {role === 'player'
                             ? 'Position, height, and team preferences scoring panel placeholder.'
                             : 'Roster needs and player profile scoring panel placeholder.'}
                     </p>
@@ -62,9 +56,9 @@ const ForYouPage = () => {
 
                 <article className="app-card">
                     <p className="card-kicker">Priorities</p>
-                    <h3>{roleView === 'player' ? 'Your profile gaps' : 'Your listing gaps'}</h3>
+                    <h3>{role === 'player' ? 'Your profile gaps' : 'Your listing gaps'}</h3>
                     <p>
-                        {roleView === 'player'
+                        {role === 'player'
                             ? 'Guidance to improve discoverability will be displayed here.'
                             : 'Guidance to improve listing completion will be displayed here.'}
                     </p>
@@ -75,7 +69,7 @@ const ForYouPage = () => {
 
                 <article className="app-card app-card-wide">
                     <p className="card-kicker">Recommendations</p>
-                    <h3>{roleView === 'player' ? 'Suggested teams and listings' : 'Suggested players and fit scores'}</h3>
+                    <h3>{role === 'player' ? 'Suggested teams and listings' : 'Suggested players and fit scores'}</h3>
                     <p>Container reserved for ranked recommendation cards from future matching logic.</p>
                     <div className="empty-slot">Recommendations will appear here.</div>
                 </article>
