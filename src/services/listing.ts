@@ -173,3 +173,40 @@ export const createListing = async ({ teamId, status = 'open', description, posi
         listing,
     }
 }
+
+export const getListingsForTeamId = async (teamId: string): Promise<ListingResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedTeamId = teamId.trim()
+
+    if (!normalizedTeamId) {
+        return { ok: false, message: 'A team id is required.' }
+    }
+
+    const { data, error } = await supabase
+        .from('listing')
+        .select('id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id)')
+        .eq('team_id', normalizedTeamId)
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    const rows = (data ?? []) as unknown as ListingRow[]
+    const listingIds = rows.map((listing) => listing.id)
+    const applicantCounts = await getApplicantCounts(listingIds)
+
+    return {
+        ok: true,
+        listings: rows.map((row) => toListingRecord(row, applicantCounts.get(row.id) ?? 0)),
+    }
+}

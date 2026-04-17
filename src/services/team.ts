@@ -16,6 +16,12 @@ type TeamResult = {
     teams?: TeamRecord[]
 }
 
+type TeamByIdResult = {
+    ok: boolean
+    message?: string
+    team?: TeamRecord
+}
+
 type TeamCreatePayload = {
     name: string
     league: string
@@ -123,6 +129,52 @@ export const createTeam = async ({ name, league, location, url }: TeamCreatePayl
 
     if (error) {
         return { ok: false, message: error.message }
+    }
+
+    return {
+        ok: true,
+        team: mapTeamRow(
+            data as {
+                id: string
+                name: string
+                league: string
+                location: string
+                url: string | null
+                manager_id: string
+            },
+        ),
+    }
+}
+
+export const getTeamById = async (teamId: string): Promise<TeamByIdResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedTeamId = teamId.trim()
+
+    if (!normalizedTeamId) {
+        return { ok: false, message: 'A team id is required.' }
+    }
+
+    const { data, error } = await supabase
+        .from('team')
+        .select('id, name, league, location, url, manager_id')
+        .eq('id', normalizedTeamId)
+        .maybeSingle()
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    if (!data) {
+        return { ok: false, message: 'Team not found.' }
     }
 
     return {

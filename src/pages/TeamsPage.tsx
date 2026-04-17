@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
 import { type UserRole } from '../services/auth'
 import { getCurrentProfile } from '../services/profile'
 import { createTeam, getTeamsForCurrentUser, type TeamRecord } from '../services/team'
 
+const TEAMS_PER_PAGE = 6
+
 const TeamsPage = () => {
     const [role, setRole] = useState<UserRole | null>(null)
     const [teams, setTeams] = useState<TeamRecord[]>([])
+    const [currentPage, setCurrentPage] = useState(1)
     const [isLoading, setIsLoading] = useState(true)
     const [isCreating, setIsCreating] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -50,11 +54,20 @@ const TeamsPage = () => {
             }
 
             setTeams(teamResult.teams ?? [])
+            setCurrentPage(1)
             setIsLoading(false)
         }
 
         void loadPage()
     }, [])
+
+    const totalTeams = teams.length
+    const totalPages = Math.max(1, Math.ceil(totalTeams / TEAMS_PER_PAGE))
+    const safeCurrentPage = Math.min(currentPage, totalPages)
+    const pageStart = (safeCurrentPage - 1) * TEAMS_PER_PAGE
+    const paginatedTeams = teams.slice(pageStart, pageStart + TEAMS_PER_PAGE)
+    const visibleStart = totalTeams === 0 ? 0 : pageStart + 1
+    const visibleEnd = totalTeams === 0 ? 0 : Math.min(pageStart + TEAMS_PER_PAGE, totalTeams)
 
     const handleCreateTeam = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
@@ -84,94 +97,113 @@ const TeamsPage = () => {
         }
 
         setTeams((previous) => [result.team as TeamRecord, ...previous])
+        setCurrentPage(1)
         setStatusType('success')
         setStatusMessage('Team created successfully.')
         event.currentTarget.reset()
     }
 
     return (
-        <main className="app-page teams-page">
-            <section className="app-hero teams-page-hero">
-                <SiteNavbar links={navLinks} ctaLabel="Sign In" ctaTo="/login" />
-                <div className="app-hero-content">
-                    <p className="eyebrow">Teams</p>
-                    <h1>{role === 'manager' ? 'Manage your clubs and recruiting footprint.' : 'Find the right club environment.'}</h1>
-                    <p className="lead-copy">
-                        {role === 'manager'
-                            ? 'Create and maintain your team records before publishing listings.'
-                            : 'Browse active teams by league and location, then apply through open listings.'}
-                    </p>
+        <main className="app-page teams-page-simple">
+            <SiteNavbar links={navLinks} ctaLabel="Sign In" ctaTo="/login" />
+
+            <section className="app-section teams-page-shell" aria-label="Teams page content">
+                <div className="teams-page-content">
+                    <article className="app-card teams-directory-panel">
+                        <p className="card-kicker">Teams</p>
+                        <h3>{role === 'manager' ? 'Your team directory' : 'Open team directory'}</h3>
+                        <p>
+                            {isLoading
+                                ? 'Loading team records.'
+                                : role === 'manager'
+                                    ? 'Manage your team records and keep listing details up to date.'
+                                    : 'Browse clubs by league and location, then open listings to apply.'}
+                        </p>
+
+                        {teams.length === 0 ? (
+                            <div className="empty-slot">No teams found yet.</div>
+                        ) : (
+                            <>
+                                <p className="teams-directory-helper">Tap or click any team card to open its profile.</p>
+
+                                <div className="listing-board">
+                                    {paginatedTeams.map((team) => (
+                                        <Link
+                                            className="listing-entry listing-entry-link"
+                                            to={`/teams/${team.id}`}
+                                            key={team.id}
+                                            aria-label={`Open ${team.name} profile`}
+                                        >
+                                            <header className="listing-entry-header">
+                                                <p className="listing-team">{team.name}</p>
+                                                <p className="listing-applicants">{team.league}</p>
+                                            </header>
+                                            <h4>{team.location}</h4>
+                                            <p>{team.url ? team.url : 'No team website listed.'}</p>
+                                            <p className="listing-entry-link-hint">Open team profile</p>
+                                        </Link>
+                                    ))}
+                                </div>
+
+                                <div className="teams-pagination" aria-label="Teams pagination">
+                                    <p className="teams-pagination-copy">
+                                        Showing {visibleStart}-{visibleEnd} of {totalTeams}
+                                    </p>
+                                    <div className="teams-pagination-controls">
+                                        <button
+                                            className="secondary-button"
+                                            type="button"
+                                            onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
+                                            disabled={safeCurrentPage === 1}
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="teams-pagination-page">Page {safeCurrentPage} of {totalPages}</span>
+                                        <button
+                                            className="secondary-button"
+                                            type="button"
+                                            onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
+                                            disabled={safeCurrentPage === totalPages}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </article>
+
+                    <aside className="app-card teams-actions-panel">
+                        <p className="card-kicker">Actions</p>
+                        <h3>{role === 'manager' ? 'Create team' : 'Next step'}</h3>
+                        {role === 'manager' ? (
+                            <form className="auth-form" onSubmit={handleCreateTeam} noValidate>
+                                <label htmlFor="team-name">Team Name</label>
+                                <input id="team-name" name="name" type="text" required />
+
+                                <label htmlFor="team-league">League</label>
+                                <input id="team-league" name="league" type="text" required />
+
+                                <label htmlFor="team-location">Location</label>
+                                <input id="team-location" name="location" type="text" required />
+
+                                <label htmlFor="team-url">Team URL (optional)</label>
+                                <input id="team-url" name="url" type="url" />
+
+                                <button className="primary-button" type="submit" disabled={isCreating}>
+                                    {isCreating ? 'Creating team...' : 'Create team'}
+                                </button>
+                            </form>
+                        ) : (
+                            <>
+                                <p>Use Listings to apply to teams that are actively recruiting your position.</p>
+                                <a className="primary-button" href="/listings">
+                                    Browse listings
+                                </a>
+                            </>
+                        )}
+                    </aside>
                 </div>
-            </section>
-
-            <section className="app-section teams-page-grid" aria-label="Teams modules">
-                <article className="app-card">
-                    <p className="card-kicker">Snapshot</p>
-                    <h3>{isLoading ? 'Loading teams' : role === 'manager' ? 'Your managed teams' : 'Available teams'}</h3>
-                    <p>
-                        {isLoading
-                            ? 'Fetching your latest team data.'
-                            : role === 'manager'
-                                ? 'These are the teams you can attach listings to.'
-                                : 'Browse current team records and jump to open listings.'}
-                    </p>
-                    <div className="empty-slot">
-                        <strong>{teams.length}</strong> {teams.length === 1 ? 'team' : 'teams'} visible
-                    </div>
-                </article>
-
-                <article className="app-card">
-                    <p className="card-kicker">Actions</p>
-                    <h3>{role === 'manager' ? 'Create team' : 'Next step'}</h3>
-                    {role === 'manager' ? (
-                        <form className="auth-form" onSubmit={handleCreateTeam} noValidate>
-                            <label htmlFor="team-name">Team Name</label>
-                            <input id="team-name" name="name" type="text" required />
-
-                            <label htmlFor="team-league">League</label>
-                            <input id="team-league" name="league" type="text" required />
-
-                            <label htmlFor="team-location">Location</label>
-                            <input id="team-location" name="location" type="text" required />
-
-                            <label htmlFor="team-url">Team URL (optional)</label>
-                            <input id="team-url" name="url" type="url" />
-
-                            <button className="primary-button" type="submit" disabled={isCreating}>
-                                {isCreating ? 'Creating team...' : 'Create team'}
-                            </button>
-                        </form>
-                    ) : (
-                        <>
-                            <p>Use Listings to apply to teams that are actively recruiting your position.</p>
-                            <a className="primary-button" href="/listings">
-                                Browse listings
-                            </a>
-                        </>
-                    )}
-                </article>
-
-                <article className="app-card app-card-wide">
-                    <p className="card-kicker">Directory</p>
-                    <h3>{role === 'manager' ? 'Your team directory' : 'Open team directory'}</h3>
-                    <p>Each entry includes team name, league, location, and quick access to listings.</p>
-                    {teams.length === 0 ? (
-                        <div className="empty-slot">No teams found yet.</div>
-                    ) : (
-                        <div className="listing-board">
-                            {teams.map((team) => (
-                                <article className="listing-entry" key={team.id}>
-                                    <header className="listing-entry-header">
-                                        <p className="listing-team">{team.name}</p>
-                                        <p className="listing-applicants">{team.league}</p>
-                                    </header>
-                                    <h4>{team.location}</h4>
-                                    <p>{team.url ? team.url : 'No URL provided yet.'}</p>
-                                </article>
-                            ))}
-                        </div>
-                    )}
-                </article>
             </section>
 
             {statusMessage && (

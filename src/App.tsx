@@ -10,6 +10,7 @@ import ListingsPage from './pages/ListingsPage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
 import SignupPage from './pages/SignupPage'
+import TeamProfilePage from './pages/TeamProfilePage'
 import TeamsPage from './pages/TeamsPage'
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/complete-profile" element={<CompleteProfilePage />} />
             <Route path="/teams" element={<TeamsPage />} />
+            <Route path="/teams/:teamId" element={<TeamProfilePage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/listings" element={<ListingsPage />} />
             <Route path="/for-you" element={<ForYouPage />} />
