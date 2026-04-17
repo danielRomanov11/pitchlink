@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
 import { type UserRole } from '../services/auth'
 import { getCurrentProfile } from '../services/profile'
@@ -214,12 +213,7 @@ const TeamsPage = () => {
                 </section>
             )}
 
-            <SiteFooter
-                className="page-footer"
-                text="Need a full manager or player setup?"
-                linkLabel="Open profile"
-                linkTo="/profile"
-            />
+
         </main>
     )
 }

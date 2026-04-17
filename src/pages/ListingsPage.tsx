@@ -1,12 +1,26 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
 import { createApplication } from '../services/application'
 import type { UserRole } from '../services/auth'
 import { createListing, getListingsForCurrentUser, type ListingRecord } from '../services/listing'
 import { getCurrentProfile } from '../services/profile'
 import { getTeamsForCurrentUser, type TeamRecord } from '../services/team'
+
+const listingPositionOptions = [
+    'Goalkeeper',
+    'Center Back',
+    'Left Back',
+    'Right Back',
+    'Defensive Midfielder',
+    'Central Midfielder',
+    'Attacking Midfielder',
+    'Left Midfielder',
+    'Right Midfielder',
+    'Left Winger',
+    'Right Winger',
+    'Striker',
+]
 
 const ListingsPage = () => {
     const [role, setRole] = useState<UserRole | null>(null)
@@ -204,7 +218,15 @@ const ListingsPage = () => {
                                 </select>
 
                                 <label htmlFor="listing-position">Position</label>
-                                <input id="listing-position" name="position" type="text" required />
+                                <select id="listing-position" name="position" required>
+                                    <option value="">Select one position</option>
+                                    {listingPositionOptions.map((positionOption) => (
+                                        <option key={positionOption} value={positionOption}>
+                                            {positionOption}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="auth-helper-text">Choose one position per listing.</p>
 
                                 <label htmlFor="listing-description">Description</label>
                                 <textarea id="listing-description" name="description" rows={3} />
@@ -284,12 +306,6 @@ const ListingsPage = () => {
                 </section>
             )}
 
-            <SiteFooter
-                className="page-footer"
-                text="Need personalized matching?"
-                linkLabel="Open For You"
-                linkTo="/for-you"
-            />
         </main>
     )
 }

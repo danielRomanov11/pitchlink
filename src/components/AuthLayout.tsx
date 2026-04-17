@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import type { PropsWithChildren } from 'react'
-import SiteFooter from './SiteFooter'
 
 type AuthLayoutProps = PropsWithChildren<{
     title: string
@@ -14,9 +13,6 @@ const AuthLayout = ({
     title,
     subtitle,
     children,
-    footerText,
-    footerLinkLabel,
-    footerLinkTo,
 }: AuthLayoutProps) => {
     return (
         <main className="auth-page">
@@ -28,12 +24,6 @@ const AuthLayout = ({
                 <h1>{title}</h1>
                 <p className="auth-subtitle">{subtitle}</p>
                 {children}
-                <SiteFooter
-                    className="auth-footer"
-                    text={footerText}
-                    linkLabel={footerLinkLabel}
-                    linkTo={footerLinkTo}
-                />
             </section>
         </main>
     )

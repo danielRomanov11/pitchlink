@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom'
-import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
 
 const HomePage = () => {
@@ -61,12 +60,6 @@ const HomePage = () => {
                 </article>
             </section>
 
-            <SiteFooter
-                className="page-footer"
-                text="Ready to get recruited on Pitch Link?"
-                linkLabel="Create your account"
-                linkTo="/signup"
-            />
         </>
     )
 }
