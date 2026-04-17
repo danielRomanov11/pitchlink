@@ -927,6 +927,18 @@ h1 {
   border: 1px solid rgba(213, 120, 120, 0.56);
 }
 
+.status-chip.open {
+  color: #d8f7c8;
+  background: rgba(41, 75, 31, 0.45);
+  border: 1px solid rgba(129, 174, 96, 0.52);
+}
+
+.status-chip.closed {
+  color: #e7e4cf;
+  background: rgba(96, 95, 82, 0.35);
+  border: 1px solid rgba(176, 172, 140, 0.5);
+}
+
 .teams-page-hero {
   background:
     linear-gradient(115deg, rgba(7, 18, 8, 0.88), rgba(9, 22, 11, 0.56)),
