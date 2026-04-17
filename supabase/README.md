@@ -6,6 +6,7 @@ This folder now contains destructive reset + relational schema migrations.
 
 1. `migrations/202604060001_reset_legacy_data.sql`
 2. `migrations/202604060002_create_relational_schema.sql`
+3. `migrations/202604170001_guard_application_message_on_status_change.sql`
 
 ## What The Reset Does
 
@@ -18,6 +19,7 @@ Run in order:
 
 1. `202604060001_reset_legacy_data.sql`
 2. `202604060002_create_relational_schema.sql`
+3. `202604170001_guard_application_message_on_status_change.sql`
 
 ## Apply With Supabase CLI
 

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
 import { getCurrentProfile, updateProfileIdentity, upsertProfile, type CurrentProfile } from '../services/profile'
 
@@ -362,7 +361,7 @@ const ProfilePage = () => {
                     birthday: isPlayer ? birthdayInput : '',
                     position: isPlayer ? positionValue : '',
                     height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
-                    bio: isPlayer ? bioInput : '',
+                    bio: bioInput,
                     videoUrl: isPlayer ? videoUrlInput : '',
                 }
             })
@@ -390,7 +389,7 @@ const ProfilePage = () => {
             birthday: isPlayer ? birthdayInput : '',
             position: isPlayer ? positionValue : '',
             height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
-            bio: isPlayer ? bioInput : '',
+            bio: bioInput,
             videoUrl: isPlayer ? videoUrlInput : '',
         })
 
@@ -412,7 +411,7 @@ const ProfilePage = () => {
                 birthday: isPlayer ? birthdayInput : '',
                 position: isPlayer ? positionValue : '',
                 height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
-                bio: isPlayer ? bioInput : '',
+                bio: bioInput,
                 videoUrl: isPlayer ? videoUrlInput : '',
             }
         })
@@ -710,17 +709,21 @@ const ProfilePage = () => {
                                             </p>
                                         )}
 
+                                        <label htmlFor="bio">Bio</label>
+                                        <textarea
+                                            id="bio"
+                                            rows={4}
+                                            value={bioInput}
+                                            onChange={(event) => setBioInput(event.target.value)}
+                                            placeholder={
+                                                profile.role === 'player'
+                                                    ? 'Share your style of play, strengths, and goals.'
+                                                    : 'Share your coaching approach, team vision, and current recruiting focus.'
+                                            }
+                                        />
+
                                         {profile.role === 'player' ? (
                                             <>
-                                                <label htmlFor="bio">Bio</label>
-                                                <textarea
-                                                    id="bio"
-                                                    rows={4}
-                                                    value={bioInput}
-                                                    onChange={(event) => setBioInput(event.target.value)}
-                                                    placeholder="Share your style of play, strengths, and goals."
-                                                />
-
                                                 <label htmlFor="videoUrl">Highlight Video URL</label>
                                                 <input
                                                     id="videoUrl"
@@ -732,7 +735,7 @@ const ProfilePage = () => {
                                             </>
                                         ) : (
                                             <p className="auth-helper-text">
-                                                Manager profiles only store your identity role and name in this release.
+                                                Your manager bio appears on your profile and helps players understand your program.
                                             </p>
                                         )}
 
@@ -753,12 +756,6 @@ const ProfilePage = () => {
                 )}
             </section>
 
-            <SiteFooter
-                className="page-footer"
-                text="Need to continue exploring opportunities?"
-                linkLabel="Browse listings"
-                linkTo="/listings"
-            />
         </main>
     )
 }

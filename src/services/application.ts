@@ -145,6 +145,10 @@ export const createApplication = async ({ teamId, listingId, message }: CreateAp
     })
 
     if (error) {
+        if (error.code === '23505') {
+            return { ok: false, message: 'You have already applied to this listing.' }
+        }
+
         return { ok: false, message: error.message }
     }
 
@@ -164,12 +168,28 @@ export const updateApplicationStatus = async (
         return { ok: false, message: 'Application id is required.' }
     }
 
+    const { data: existingApplication, error: existingApplicationError } = await supabase
+        .from('application')
+        .select('message')
+        .eq('id', applicationId)
+        .single()
+
+    if (existingApplicationError) {
+        return { ok: false, message: existingApplicationError.message }
+    }
+
+    const updatePayload: { status: ApplicationStatus; message: string | null } = {
+        status,
+        message: ((existingApplication as { message: string | null } | null)?.message ?? null),
+    }
+
+    if (message !== undefined) {
+        updatePayload.message = message.trim() || null
+    }
+
     const { error } = await supabase
         .from('application')
-        .update({
-            status,
-            message: message?.trim() || null,
-        })
+        .update(updatePayload)
         .eq('id', applicationId)
 
     if (error) {

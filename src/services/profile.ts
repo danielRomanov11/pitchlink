@@ -24,12 +24,16 @@ type IdentityUpdateResult = {
     message?: string
 }
 
-type ProfileRow = {
+type PlayerProfileRow = {
     birthday: string | null
     position: string | null
     height: number | null
     bio: string | null
     url: string | null
+}
+
+type ManagerProfileRow = {
+    bio: string | null
 }
 
 export type CurrentProfile = {
@@ -93,7 +97,8 @@ const missingConfigMessage = 'Supabase is not configured. Add VITE_SUPABASE_URL 
 const toCurrentProfile = (
     user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
     appUser: { email: string; name: string; role: UserRole },
-    player: ProfileRow | null,
+    player: PlayerProfileRow | null,
+    manager: ManagerProfileRow | null,
 ): CurrentProfile => ({
     userId: user.id,
     email: appUser.email || user.email || '',
@@ -102,7 +107,7 @@ const toCurrentProfile = (
     birthday: player?.birthday ?? '',
     position: player?.position ?? '',
     height: player?.height === null || player?.height === undefined ? '' : String(player.height),
-    bio: player?.bio ?? '',
+    bio: appUser.role === 'player' ? player?.bio ?? '' : manager?.bio ?? '',
     videoUrl: player?.url ?? '',
 })
 
@@ -178,7 +183,8 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
         }
     }
 
-    let playerRow: ProfileRow | null = null
+    let playerRow: PlayerProfileRow | null = null
+    let managerRow: ManagerProfileRow | null = null
 
     if (resolvedRole === 'player') {
         const { data, error } = await supabase
@@ -191,7 +197,19 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
             return { ok: false, message: error.message }
         }
 
-        playerRow = (data as ProfileRow | null) ?? null
+        playerRow = (data as PlayerProfileRow | null) ?? null
+    } else {
+        const { data, error } = await supabase
+            .from('manager')
+            .select('bio')
+            .eq('user_id', user.id)
+            .maybeSingle()
+
+        if (error) {
+            return { ok: false, message: error.message }
+        }
+
+        managerRow = (data as ManagerProfileRow | null) ?? null
     }
 
     return {
@@ -204,6 +222,7 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
                 role: resolvedRole,
             },
             playerRow,
+            managerRow,
         ),
     }
 }
@@ -244,6 +263,20 @@ export const upsertProfile = async ({ role, birthday, position, height, bio, vid
     }
 
     if (parsedRole === 'manager') {
+        const { error: upsertManagerError } = await supabase.from('manager').upsert(
+            {
+                user_id: user.id,
+                bio: normalizeText(bio),
+            },
+            {
+                onConflict: 'user_id',
+            },
+        )
+
+        if (upsertManagerError) {
+            return { ok: false, message: upsertManagerError.message }
+        }
+
         return { ok: true }
     }
 

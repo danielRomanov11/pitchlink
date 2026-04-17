@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
 import type { UserRole } from '../services/auth'
 import { getCurrentProfile } from '../services/profile'
@@ -75,12 +74,6 @@ const ForYouPage = () => {
                 </article>
             </section>
 
-            <SiteFooter
-                className="page-footer"
-                text="Ready to manage your submissions?"
-                linkLabel="Go to applications"
-                linkTo="/applications"
-            />
         </main>
     )
 }

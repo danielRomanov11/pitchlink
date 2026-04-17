@@ -16,6 +16,12 @@ type TeamResult = {
     teams?: TeamRecord[]
 }
 
+type TeamByIdResult = {
+    ok: boolean
+    message?: string
+    team?: TeamRecord
+}
+
 type TeamCreatePayload = {
     name: string
     league: string
@@ -24,6 +30,20 @@ type TeamCreatePayload = {
 }
 
 type TeamCreateResult = {
+    ok: boolean
+    message?: string
+    team?: TeamRecord
+}
+
+type TeamUpdatePayload = {
+    teamId: string
+    name: string
+    league: string
+    location: string
+    url?: string
+}
+
+type TeamUpdateResult = {
     ok: boolean
     message?: string
     team?: TeamRecord
@@ -123,6 +143,107 @@ export const createTeam = async ({ name, league, location, url }: TeamCreatePayl
 
     if (error) {
         return { ok: false, message: error.message }
+    }
+
+    return {
+        ok: true,
+        team: mapTeamRow(
+            data as {
+                id: string
+                name: string
+                league: string
+                location: string
+                url: string | null
+                manager_id: string
+            },
+        ),
+    }
+}
+
+export const getTeamById = async (teamId: string): Promise<TeamByIdResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedTeamId = teamId.trim()
+
+    if (!normalizedTeamId) {
+        return { ok: false, message: 'A team id is required.' }
+    }
+
+    const { data, error } = await supabase
+        .from('team')
+        .select('id, name, league, location, url, manager_id')
+        .eq('id', normalizedTeamId)
+        .maybeSingle()
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    if (!data) {
+        return { ok: false, message: 'Team not found.' }
+    }
+
+    return {
+        ok: true,
+        team: mapTeamRow(
+            data as {
+                id: string
+                name: string
+                league: string
+                location: string
+                url: string | null
+                manager_id: string
+            },
+        ),
+    }
+}
+
+export const updateTeam = async ({ teamId, name, league, location, url }: TeamUpdatePayload): Promise<TeamUpdateResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedTeamId = teamId.trim()
+    const normalizedName = name.trim()
+    const normalizedLeague = league.trim()
+    const normalizedLocation = location.trim()
+
+    if (!normalizedTeamId || !normalizedName || !normalizedLeague || !normalizedLocation) {
+        return { ok: false, message: 'Team name, league, and location are required.' }
+    }
+
+    const { data, error } = await supabase
+        .from('team')
+        .update({
+            name: normalizedName,
+            league: normalizedLeague,
+            location: normalizedLocation,
+            url: url?.trim() || null,
+        })
+        .eq('id', normalizedTeamId)
+        .select('id, name, league, location, url, manager_id')
+        .maybeSingle()
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    if (!data) {
+        return { ok: false, message: 'Team not found or you do not have permission to update it.' }
     }
 
     return {

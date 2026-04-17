@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
 import {
     getApplicationsForCurrentUser,
@@ -187,12 +186,6 @@ const ApplicationsPage = () => {
                 </section>
             )}
 
-            <SiteFooter
-                className="page-footer"
-                text="Want to revisit opportunities?"
-                linkLabel="Browse listings"
-                linkTo="/listings"
-            />
         </main>
     )
 }

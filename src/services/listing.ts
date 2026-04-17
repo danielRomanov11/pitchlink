@@ -1,9 +1,11 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getCurrentUser, type UserRole } from './auth'
 
+export type ListingStatus = 'open' | 'closed'
+
 export type ListingRecord = {
     id: string
-    status: 'open' | 'closed'
+    status: ListingStatus
     description: string
     position: string
     teamId: string
@@ -21,7 +23,7 @@ type ListingResult = {
 
 type CreateListingPayload = {
     teamId: string
-    status?: 'open' | 'closed'
+    status?: ListingStatus
     description: string
     position: string
 }
@@ -32,11 +34,17 @@ type CreateListingResult = {
     listing?: ListingRecord
 }
 
+type UpdateListingStatusResult = {
+    ok: boolean
+    message?: string
+    listing?: ListingRecord
+}
+
 const missingConfigMessage = 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
 
 type ListingRow = {
     id: string
-    status: 'open' | 'closed'
+    status: ListingStatus
     description: string
     position: string
     team_id: string
@@ -171,5 +179,79 @@ export const createListing = async ({ teamId, status = 'open', description, posi
     return {
         ok: true,
         listing,
+    }
+}
+
+export const updateListingStatus = async (listingId: string, status: ListingStatus): Promise<UpdateListingStatusResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedListingId = listingId.trim()
+
+    if (!normalizedListingId) {
+        return { ok: false, message: 'A listing id is required.' }
+    }
+
+    const { data, error } = await supabase
+        .from('listing')
+        .update({ status })
+        .eq('id', normalizedListingId)
+        .select('id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id)')
+        .single()
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    const listingRow = data as unknown as ListingRow
+    const applicantCounts = await getApplicantCounts([listingRow.id])
+
+    return {
+        ok: true,
+        listing: toListingRecord(listingRow, applicantCounts.get(listingRow.id) ?? 0),
+    }
+}
+
+export const getListingsForTeamId = async (teamId: string): Promise<ListingResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedTeamId = teamId.trim()
+
+    if (!normalizedTeamId) {
+        return { ok: false, message: 'A team id is required.' }
+    }
+
+    const { data, error } = await supabase
+        .from('listing')
+        .select('id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id)')
+        .eq('team_id', normalizedTeamId)
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    const rows = (data ?? []) as unknown as ListingRow[]
+    const listingIds = rows.map((listing) => listing.id)
+    const applicantCounts = await getApplicantCounts(listingIds)
+
+    return {
+        ok: true,
+        listings: rows.map((row) => toListingRecord(row, applicantCounts.get(row.id) ?? 0)),
     }
 }

@@ -1,21 +1,47 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
-import { createApplication } from '../services/application'
+import {
+    createApplication,
+    getApplicationsForCurrentUser,
+    type ApplicationStatus,
+} from '../services/application'
 import type { UserRole } from '../services/auth'
-import { createListing, getListingsForCurrentUser, type ListingRecord } from '../services/listing'
+import {
+    createListing,
+    getListingsForCurrentUser,
+    updateListingStatus,
+    type ListingRecord,
+    type ListingStatus,
+} from '../services/listing'
 import { getCurrentProfile } from '../services/profile'
 import { getTeamsForCurrentUser, type TeamRecord } from '../services/team'
+
+const listingPositionOptions = [
+    'Goalkeeper',
+    'Center Back',
+    'Left Back',
+    'Right Back',
+    'Defensive Midfielder',
+    'Central Midfielder',
+    'Attacking Midfielder',
+    'Left Midfielder',
+    'Right Midfielder',
+    'Left Winger',
+    'Right Winger',
+    'Striker',
+]
 
 const ListingsPage = () => {
     const [role, setRole] = useState<UserRole | null>(null)
     const [teams, setTeams] = useState<TeamRecord[]>([])
     const [listings, setListings] = useState<ListingRecord[]>([])
     const [applicationMessages, setApplicationMessages] = useState<Record<string, string>>({})
+    const [applicationStatuses, setApplicationStatuses] = useState<Record<string, ApplicationStatus>>({})
     const [isLoading, setIsLoading] = useState(true)
     const [isCreatingListing, setIsCreatingListing] = useState(false)
     const [activeApplyListingId, setActiveApplyListingId] = useState<string | null>(null)
+    const [activeListingStatusId, setActiveListingStatusId] = useState<string | null>(null)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
 
@@ -57,6 +83,29 @@ const ListingsPage = () => {
             }
 
             setListings(listingResult.listings ?? [])
+            setApplicationMessages({})
+            setApplicationStatuses({})
+
+            if (currentRole === 'player') {
+                const applicationResult = await getApplicationsForCurrentUser('player')
+
+                if (!applicationResult.ok) {
+                    setStatusType('error')
+                    setStatusMessage(applicationResult.message ?? 'Unable to load your application statuses.')
+                    setIsLoading(false)
+                    return
+                }
+
+                const statusesByListing = (applicationResult.applications ?? []).reduce<Record<string, ApplicationStatus>>(
+                    (accumulator, application) => {
+                        accumulator[application.listingId] = application.status
+                        return accumulator
+                    },
+                    {},
+                )
+
+                setApplicationStatuses(statusesByListing)
+            }
 
             if (currentRole === 'manager') {
                 const teamResult = await getTeamsForCurrentUser('manager')
@@ -92,9 +141,8 @@ const ListingsPage = () => {
         const teamId = String(formData.get('teamId') ?? '')
         const position = String(formData.get('position') ?? '')
         const description = String(formData.get('description') ?? '')
-        const status = String(formData.get('status') ?? 'open') as 'open' | 'closed'
 
-        const result = await createListing({ teamId, position, description, status })
+        const result = await createListing({ teamId, position, description })
 
         setIsCreatingListing(false)
 
@@ -112,6 +160,12 @@ const ListingsPage = () => {
 
     const handleApply = async (listing: ListingRecord) => {
         if (role !== 'player') {
+            return
+        }
+
+        if (applicationStatuses[listing.id]) {
+            setStatusType('error')
+            setStatusMessage('You have already applied to this listing.')
             return
         }
 
@@ -135,6 +189,14 @@ const ListingsPage = () => {
 
         setStatusType('success')
         setStatusMessage('Application submitted successfully.')
+        setApplicationStatuses((previous) => ({
+            ...previous,
+            [listing.id]: 'pending',
+        }))
+        setApplicationMessages((previous) => ({
+            ...previous,
+            [listing.id]: '',
+        }))
         setListings((previous) =>
             previous.map((previousListing) => {
                 if (previousListing.id !== listing.id) {
@@ -147,11 +209,39 @@ const ListingsPage = () => {
                 }
             }),
         )
+    }
 
-        setApplicationMessages((previous) => ({
-            ...previous,
-            [listing.id]: '',
-        }))
+    const handleUpdateListingStatus = async (listing: ListingRecord, status: ListingStatus) => {
+        if (role !== 'manager' || listing.status === status) {
+            return
+        }
+
+        setStatusMessage(null)
+        setStatusType(null)
+        setActiveListingStatusId(listing.id)
+
+        const result = await updateListingStatus(listing.id, status)
+
+        setActiveListingStatusId(null)
+
+        if (!result.ok || !result.listing) {
+            setStatusType('error')
+            setStatusMessage(result.message ?? 'Unable to update listing status.')
+            return
+        }
+
+        setListings((previous) =>
+            previous.map((previousListing) => {
+                if (previousListing.id !== listing.id) {
+                    return previousListing
+                }
+
+                return result.listing as ListingRecord
+            }),
+        )
+
+        setStatusType('success')
+        setStatusMessage('Listing status updated.')
     }
 
     return (
@@ -204,16 +294,18 @@ const ListingsPage = () => {
                                 </select>
 
                                 <label htmlFor="listing-position">Position</label>
-                                <input id="listing-position" name="position" type="text" required />
+                                <select id="listing-position" name="position" required>
+                                    <option value="">Select one position</option>
+                                    {listingPositionOptions.map((positionOption) => (
+                                        <option key={positionOption} value={positionOption}>
+                                            {positionOption}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="auth-helper-text">Choose one position per listing.</p>
 
                                 <label htmlFor="listing-description">Description</label>
                                 <textarea id="listing-description" name="description" rows={3} />
-
-                                <label htmlFor="listing-status">Status</label>
-                                <select id="listing-status" name="status" defaultValue="open">
-                                    <option value="open">Open</option>
-                                    <option value="closed">Closed</option>
-                                </select>
 
                                 <button className="primary-button" type="submit" disabled={isCreatingListing}>
                                     {isCreatingListing ? 'Creating listing...' : 'Create listing'}
@@ -221,7 +313,7 @@ const ListingsPage = () => {
                             </form>
                         )
                     ) : (
-                        <p>Open a listing card below to apply immediately.</p>
+                        <p>Apply directly from a listing card, then track status from the same place.</p>
                     )}
                 </article>
 
@@ -240,33 +332,61 @@ const ListingsPage = () => {
                                         {listing.applicants} {listing.applicants === 1 ? 'applicant' : 'applicants'}
                                     </p>
                                 </header>
-                                <h4>{listing.position} · {listing.status}</h4>
+                                <h4>{listing.position}</h4>
+                                <p className={`status-chip ${listing.status}`}>Listing {listing.status}</p>
                                 <p>{listing.description}</p>
 
                                 {role === 'player' && (
-                                    <>
-                                        <label htmlFor={`listing-message-${listing.id}`}>Optional message</label>
-                                        <textarea
-                                            id={`listing-message-${listing.id}`}
-                                            rows={2}
-                                            value={applicationMessages[listing.id] ?? ''}
-                                            onChange={(event) =>
-                                                setApplicationMessages((previous) => ({
-                                                    ...previous,
-                                                    [listing.id]: event.target.value,
-                                                }))
-                                            }
-                                            placeholder="Introduce yourself to the manager."
-                                        />
+                                    applicationStatuses[listing.id] ? (
+                                        <p className={`status-chip ${applicationStatuses[listing.id]}`}>
+                                            Application {applicationStatuses[listing.id]}
+                                        </p>
+                                    ) : (
+                                        <>
+                                            <label htmlFor={`listing-message-${listing.id}`}>Message (optional)</label>
+                                            <textarea
+                                                id={`listing-message-${listing.id}`}
+                                                rows={2}
+                                                value={applicationMessages[listing.id] ?? ''}
+                                                onChange={(event) =>
+                                                    setApplicationMessages((previous) => ({
+                                                        ...previous,
+                                                        [listing.id]: event.target.value,
+                                                    }))
+                                                }
+                                                placeholder="Share a quick note with the manager."
+                                            />
+                                            <button
+                                                className="secondary-button"
+                                                type="button"
+                                                onClick={() => void handleApply(listing)}
+                                                disabled={activeApplyListingId === listing.id}
+                                            >
+                                                {activeApplyListingId === listing.id ? 'Submitting...' : 'Apply'}
+                                            </button>
+                                        </>
+                                    )
+                                )}
+
+                                {role === 'manager' && (
+                                    <div className="role-switcher" role="group" aria-label="Edit listing status">
                                         <button
-                                            className="secondary-button"
+                                            className={`secondary-button role-switcher-button ${listing.status === 'open' ? 'active' : ''}`}
                                             type="button"
-                                            onClick={() => void handleApply(listing)}
-                                            disabled={activeApplyListingId === listing.id}
+                                            onClick={() => void handleUpdateListingStatus(listing, 'open')}
+                                            disabled={activeListingStatusId === listing.id}
                                         >
-                                            {activeApplyListingId === listing.id ? 'Submitting...' : 'Apply'}
+                                            Open
                                         </button>
-                                    </>
+                                        <button
+                                            className={`secondary-button role-switcher-button ${listing.status === 'closed' ? 'active' : ''}`}
+                                            type="button"
+                                            onClick={() => void handleUpdateListingStatus(listing, 'closed')}
+                                            disabled={activeListingStatusId === listing.id}
+                                        >
+                                            Closed
+                                        </button>
+                                    </div>
                                 )}
                             </article>
                         ))}
@@ -284,12 +404,6 @@ const ListingsPage = () => {
                 </section>
             )}
 
-            <SiteFooter
-                className="page-footer"
-                text="Need personalized matching?"
-                linkLabel="Open For You"
-                linkTo="/for-you"
-            />
         </main>
     )
 }
