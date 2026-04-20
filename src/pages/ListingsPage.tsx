@@ -15,7 +15,7 @@ import {
     type ListingRecord,
     type ListingStatus,
 } from '../services/listing'
-import { calculatePlayerListingMatchScore } from '../services/matching'
+import { LEAGUE_TIER_OPTIONS, calculatePlayerListingMatchScore, normalizeLeagueTierValues } from '../services/matching'
 import { getCurrentProfile, type CurrentProfile } from '../services/profile'
 import { getTeamsForCurrentUser, type TeamRecord } from '../services/team'
 
@@ -34,7 +34,7 @@ const listingPositionOptions = [
     'Striker',
 ]
 
-const parsePreferenceInput = (value: string) => {
+const parseTextPreferenceInput = (value: string) => {
     const dedupedValues = new Set<string>()
 
     for (const token of value.split(',')) {
@@ -50,8 +50,16 @@ const parsePreferenceInput = (value: string) => {
     return [...dedupedValues]
 }
 
+const parseLeagueTierInput = (value: string) => {
+    return normalizeLeagueTierValues(
+        value
+            .split(',')
+            .map((token) => token.trim())
+            .filter((token) => token.length > 0),
+    )
+}
+
 type ListingPreferenceDraft = {
-    preferredPositions: string
     preferredPlayerLeagues: string
     preferredPlayerLocations: string
 }
@@ -93,7 +101,6 @@ const ListingsPage = () => {
                 playerPreferredLeagues: currentProfile.preferredLeagues,
                 playerPreferredLocations: currentProfile.preferredLocations,
                 listingPosition: listing.position,
-                listingPreferredPositions: listing.preferredPositions,
                 listingPreferredPlayerLeagues: listing.preferredPlayerLeagues,
                 listingPreferredPlayerLocations: listing.preferredPlayerLocations,
                 teamLeague: listing.teamLeague,
@@ -196,7 +203,6 @@ const ListingsPage = () => {
 
     const getListingPreferenceDraft = (listing: ListingRecord): ListingPreferenceDraft => {
         return listingPreferenceDrafts[listing.id] ?? {
-            preferredPositions: listing.preferredPositions.join(', '),
             preferredPlayerLeagues: listing.preferredPlayerLeagues.join(', '),
             preferredPlayerLocations: listing.preferredPlayerLocations.join(', '),
         }
@@ -210,10 +216,6 @@ const ListingsPage = () => {
         setListingPreferenceDrafts((previousDrafts) => ({
             ...previousDrafts,
             [listingId]: {
-                preferredPositions:
-                    previousDrafts[listingId]?.preferredPositions
-                    ?? listings.find((listing) => listing.id === listingId)?.preferredPositions.join(', ')
-                    ?? '',
                 preferredPlayerLeagues:
                     previousDrafts[listingId]?.preferredPlayerLeagues
                     ?? listings.find((listing) => listing.id === listingId)?.preferredPlayerLeagues.join(', ')
@@ -242,15 +244,13 @@ const ListingsPage = () => {
         const teamId = String(formData.get('teamId') ?? '')
         const position = String(formData.get('position') ?? '')
         const description = String(formData.get('description') ?? '')
-        const preferredPositions = parsePreferenceInput(String(formData.get('preferredPositions') ?? ''))
-        const preferredPlayerLeagues = parsePreferenceInput(String(formData.get('preferredPlayerLeagues') ?? ''))
-        const preferredPlayerLocations = parsePreferenceInput(String(formData.get('preferredPlayerLocations') ?? ''))
+        const preferredPlayerLeagues = parseLeagueTierInput(String(formData.get('preferredPlayerLeagues') ?? ''))
+        const preferredPlayerLocations = parseTextPreferenceInput(String(formData.get('preferredPlayerLocations') ?? ''))
 
         const result = await createListing({
             teamId,
             position,
             description,
-            preferredPositions,
             preferredPlayerLeagues,
             preferredPlayerLocations,
         })
@@ -362,9 +362,8 @@ const ListingsPage = () => {
 
         const draft = getListingPreferenceDraft(listing)
 
-        const normalizedPreferredPositions = parsePreferenceInput(draft.preferredPositions)
-        const normalizedPreferredPlayerLeagues = parsePreferenceInput(draft.preferredPlayerLeagues)
-        const normalizedPreferredPlayerLocations = parsePreferenceInput(draft.preferredPlayerLocations)
+        const normalizedPreferredPlayerLeagues = parseLeagueTierInput(draft.preferredPlayerLeagues)
+        const normalizedPreferredPlayerLocations = parseTextPreferenceInput(draft.preferredPlayerLocations)
 
         setStatusMessage(null)
         setStatusType(null)
@@ -372,7 +371,6 @@ const ListingsPage = () => {
 
         const result = await updateListingPreference({
             listingId: listing.id,
-            preferredPositions: normalizedPreferredPositions,
             preferredPlayerLeagues: normalizedPreferredPlayerLeagues,
             preferredPlayerLocations: normalizedPreferredPlayerLocations,
         })
@@ -393,7 +391,6 @@ const ListingsPage = () => {
 
                 return {
                     ...previousListing,
-                    preferredPositions: normalizedPreferredPositions,
                     preferredPlayerLeagues: normalizedPreferredPlayerLeagues,
                     preferredPlayerLocations: normalizedPreferredPlayerLocations,
                 }
@@ -403,7 +400,6 @@ const ListingsPage = () => {
         setListingPreferenceDrafts((previousDrafts) => ({
             ...previousDrafts,
             [listing.id]: {
-                preferredPositions: normalizedPreferredPositions.join(', '),
                 preferredPlayerLeagues: normalizedPreferredPlayerLeagues.join(', '),
                 preferredPlayerLocations: normalizedPreferredPlayerLocations.join(', '),
             },
@@ -476,21 +472,14 @@ const ListingsPage = () => {
                                 <label htmlFor="listing-description">Description</label>
                                 <textarea id="listing-description" name="description" rows={3} />
 
-                                <label htmlFor="listing-preferred-positions">Preferred player positions (optional)</label>
-                                <input
-                                    id="listing-preferred-positions"
-                                    name="preferredPositions"
-                                    type="text"
-                                    placeholder="Left Winger, Right Winger"
-                                />
-
-                                <label htmlFor="listing-preferred-leagues">Preferred player leagues (optional)</label>
+                                <label htmlFor="listing-preferred-leagues">Preferred player league tiers (optional)</label>
                                 <input
                                     id="listing-preferred-leagues"
                                     name="preferredPlayerLeagues"
                                     type="text"
-                                    placeholder="USL League One, MLS Next Pro"
+                                    placeholder="SemiPro, Amateur"
                                 />
+                                <p className="auth-helper-text">Available tiers: {LEAGUE_TIER_OPTIONS.join(', ')}</p>
 
                                 <label htmlFor="listing-preferred-locations">Preferred player locations (optional)</label>
                                 <input
@@ -583,22 +572,7 @@ const ListingsPage = () => {
                                             </button>
                                         </div>
 
-                                        <label htmlFor={`listing-preferred-positions-${listing.id}`}>Preferred player positions</label>
-                                        <input
-                                            id={`listing-preferred-positions-${listing.id}`}
-                                            type="text"
-                                            value={getListingPreferenceDraft(listing).preferredPositions}
-                                            onChange={(event) =>
-                                                handleListingPreferenceFieldChange(
-                                                    listing.id,
-                                                    'preferredPositions',
-                                                    event.target.value,
-                                                )
-                                            }
-                                            placeholder="Left Winger, Right Winger"
-                                        />
-
-                                        <label htmlFor={`listing-preferred-leagues-${listing.id}`}>Preferred player leagues</label>
+                                        <label htmlFor={`listing-preferred-leagues-${listing.id}`}>Preferred player league tiers</label>
                                         <input
                                             id={`listing-preferred-leagues-${listing.id}`}
                                             type="text"
@@ -610,8 +584,9 @@ const ListingsPage = () => {
                                                     event.target.value,
                                                 )
                                             }
-                                            placeholder="USL League One, MLS Next Pro"
+                                            placeholder="SemiPro, Amateur"
                                         />
+                                        <p className="auth-helper-text">Available tiers: {LEAGUE_TIER_OPTIONS.join(', ')}</p>
 
                                         <label htmlFor={`listing-preferred-locations-${listing.id}`}>Preferred player locations</label>
                                         <input

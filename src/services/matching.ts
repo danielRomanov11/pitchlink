@@ -16,7 +16,6 @@ export type PlayerListingMatchInput = {
     playerPreferredLeagues: string[]
     playerPreferredLocations: string[]
     listingPosition: string
-    listingPreferredPositions?: string[]
     listingPreferredPlayerLeagues?: string[]
     listingPreferredPlayerLocations?: string[]
     teamLeague: string
@@ -28,12 +27,27 @@ export type ApplicationFitInput = {
     playerPreferredLeagues: string[]
     playerPreferredLocations: string[]
     listingPosition: string
-    listingPreferredPositions: string[]
     listingPreferredPlayerLeagues: string[]
     listingPreferredPlayerLocations: string[]
     teamLeague: string
     teamLocation: string
 }
+
+type LeagueTier = 'professional' | 'semipro' | 'amateur' | 'club' | 'college' | 'high school'
+
+type PositionName =
+    | 'goalkeeper'
+    | 'center back'
+    | 'left back'
+    | 'right back'
+    | 'defensive midfielder'
+    | 'central midfielder'
+    | 'attacking midfielder'
+    | 'left midfielder'
+    | 'right midfielder'
+    | 'left winger'
+    | 'right winger'
+    | 'striker'
 
 export const DEFAULT_MATCH_WEIGHTS: MatchWeights = {
     position: 50,
@@ -41,22 +55,230 @@ export const DEFAULT_MATCH_WEIGHTS: MatchWeights = {
     location: 20,
 }
 
-const RELATED_POSITION_MAP: Record<string, string[]> = {
-    goalkeeper: [],
-    'center back': ['left back', 'right back', 'defensive midfielder'],
-    'left back': ['center back', 'left midfielder'],
-    'right back': ['center back', 'right midfielder'],
-    'defensive midfielder': ['center back', 'central midfielder'],
-    'central midfielder': ['defensive midfielder', 'attacking midfielder', 'left midfielder', 'right midfielder'],
-    'attacking midfielder': ['central midfielder', 'left winger', 'right winger', 'striker'],
-    'left midfielder': ['central midfielder', 'left winger', 'left back'],
-    'right midfielder': ['central midfielder', 'right winger', 'right back'],
-    'left winger': ['left midfielder', 'attacking midfielder', 'striker'],
-    'right winger': ['right midfielder', 'attacking midfielder', 'striker'],
-    striker: ['left winger', 'right winger', 'attacking midfielder'],
+const LEAGUE_TIER_ALIASES: Record<string, LeagueTier> = {
+    professional: 'professional',
+    pro: 'professional',
+    semipro: 'semipro',
+    'semi pro': 'semipro',
+    'semi-pro': 'semipro',
+    amateur: 'amateur',
+    amatuer: 'amateur',
+    club: 'club',
+    college: 'college',
+    collegiate: 'college',
+    'high school': 'high school',
+    highschool: 'high school',
+    'high-school': 'high school',
+    hs: 'high school',
+}
+
+const POSITION_ALIASES: Record<string, PositionName> = {
+    goalkeeper: 'goalkeeper',
+    gk: 'goalkeeper',
+    'center back': 'center back',
+    cb: 'center back',
+    'left back': 'left back',
+    lb: 'left back',
+    'right back': 'right back',
+    rb: 'right back',
+    'defensive midfielder': 'defensive midfielder',
+    cdm: 'defensive midfielder',
+    dm: 'defensive midfielder',
+    'central midfielder': 'central midfielder',
+    cm: 'central midfielder',
+    'attacking midfielder': 'attacking midfielder',
+    cam: 'attacking midfielder',
+    am: 'attacking midfielder',
+    'left midfielder': 'left midfielder',
+    lm: 'left midfielder',
+    'right midfielder': 'right midfielder',
+    rm: 'right midfielder',
+    'left winger': 'left winger',
+    lw: 'left winger',
+    'right winger': 'right winger',
+    rw: 'right winger',
+    striker: 'striker',
+    st: 'striker',
+    cf: 'striker',
+}
+
+const LEAGUE_TIER_DISPLAY_BY_KEY: Record<LeagueTier, string> = {
+    professional: 'Professional',
+    semipro: 'SemiPro',
+    amateur: 'Amateur',
+    club: 'Club',
+    college: 'College',
+    'high school': 'High School',
+}
+
+export const LEAGUE_TIER_OPTIONS = [
+    LEAGUE_TIER_DISPLAY_BY_KEY.professional,
+    LEAGUE_TIER_DISPLAY_BY_KEY.semipro,
+    LEAGUE_TIER_DISPLAY_BY_KEY.amateur,
+    LEAGUE_TIER_DISPLAY_BY_KEY.club,
+    LEAGUE_TIER_DISPLAY_BY_KEY.college,
+    LEAGUE_TIER_DISPLAY_BY_KEY['high school'],
+] as const
+
+const LEAGUE_LADDER_SCORE_BY_SOURCE: Record<LeagueTier, Record<LeagueTier, number>> = {
+    professional: {
+        professional: 100,
+        semipro: 85,
+        amateur: 60,
+        club: 45,
+        college: 35,
+        'high school': 20,
+    },
+    semipro: {
+        semipro: 100,
+        amateur: 80,
+        professional: 60,
+        club: 65,
+        college: 50,
+        'high school': 30,
+    },
+    amateur: {
+        amateur: 100,
+        semipro: 80,
+        professional: 50,
+        club: 75,
+        college: 70,
+        'high school': 55,
+    },
+    club: {
+        club: 100,
+        amateur: 80,
+        semipro: 65,
+        professional: 40,
+        college: 75,
+        'high school': 60,
+    },
+    college: {
+        college: 100,
+        club: 80,
+        amateur: 65,
+        semipro: 50,
+        professional: 35,
+        'high school': 70,
+    },
+    'high school': {
+        'high school': 100,
+        college: 80,
+        club: 70,
+        amateur: 60,
+        semipro: 40,
+        professional: 20,
+    },
+}
+
+const POSITION_SCORE_BY_TARGET: Record<PositionName, Partial<Record<PositionName, number>>> = {
+    goalkeeper: {
+        goalkeeper: 100,
+    },
+    'center back': {
+        'center back': 100,
+        'left back': 80,
+        'right back': 80,
+        'defensive midfielder': 60,
+    },
+    'left back': {
+        'left back': 100,
+        'center back': 80,
+        'left midfielder': 80,
+        'right back': 60,
+        'defensive midfielder': 60,
+    },
+    'right back': {
+        'right back': 100,
+        'center back': 80,
+        'right midfielder': 80,
+        'left back': 60,
+        'defensive midfielder': 60,
+    },
+    'defensive midfielder': {
+        'defensive midfielder': 100,
+        'central midfielder': 80,
+        'center back': 80,
+        'left back': 60,
+        'right back': 60,
+    },
+    'central midfielder': {
+        'central midfielder': 100,
+        'defensive midfielder': 80,
+        'attacking midfielder': 80,
+        'left midfielder': 60,
+        'right midfielder': 60,
+    },
+    'attacking midfielder': {
+        'attacking midfielder': 100,
+        'central midfielder': 80,
+        'left winger': 80,
+        'right winger': 80,
+        striker: 60,
+        'left midfielder': 60,
+        'right midfielder': 60,
+    },
+    'left midfielder': {
+        'left midfielder': 100,
+        'left winger': 80,
+        'central midfielder': 80,
+        'left back': 60,
+        'attacking midfielder': 60,
+        'right midfielder': 60,
+    },
+    'right midfielder': {
+        'right midfielder': 100,
+        'right winger': 80,
+        'central midfielder': 80,
+        'right back': 60,
+        'attacking midfielder': 60,
+        'left midfielder': 60,
+    },
+    'left winger': {
+        'left winger': 100,
+        'left midfielder': 80,
+        'right winger': 80,
+        'right midfielder': 60,
+        'attacking midfielder': 60,
+        striker: 60,
+    },
+    'right winger': {
+        'right winger': 100,
+        'right midfielder': 80,
+        'left winger': 80,
+        'left midfielder': 60,
+        'attacking midfielder': 60,
+        striker: 60,
+    },
+    striker: {
+        striker: 100,
+        'left winger': 80,
+        'right winger': 80,
+        'attacking midfielder': 60,
+        'left midfielder': 60,
+        'right midfielder': 60,
+    },
 }
 
 const normalizeToken = (value: string) => value.trim().toLowerCase()
+
+const toLeagueTier = (value: string): LeagueTier | null => {
+    return LEAGUE_TIER_ALIASES[normalizeToken(value)] ?? null
+}
+
+const toPositionName = (value: string): PositionName | null => {
+    return POSITION_ALIASES[normalizeToken(value)] ?? null
+}
+
+const toLeagueTierDisplay = (value: string): string | null => {
+    const normalizedTier = toLeagueTier(value)
+
+    if (!normalizedTier) {
+        return null
+    }
+
+    return LEAGUE_TIER_DISPLAY_BY_KEY[normalizedTier]
+}
 
 const normalizeValues = (values: string[]) => {
     const deduped = new Set<string>()
@@ -74,6 +296,22 @@ const normalizeValues = (values: string[]) => {
     return [...deduped]
 }
 
+export const normalizeLeagueTierValues = (values: string[]) => {
+    const dedupedLeagueTiers = new Set<string>()
+
+    for (const value of values) {
+        const normalizedTier = toLeagueTierDisplay(value)
+
+        if (!normalizedTier) {
+            continue
+        }
+
+        dedupedLeagueTiers.add(normalizedTier)
+    }
+
+    return [...dedupedLeagueTiers]
+}
+
 const parsePlayerPositions = (value: string) =>
     normalizeValues(
         value
@@ -82,47 +320,68 @@ const parsePlayerPositions = (value: string) =>
             .filter((position) => position.length > 0),
     )
 
-const areRelatedPositions = (leftPosition: string, rightPosition: string) => {
-    if (leftPosition === rightPosition) {
-        return true
-    }
-
-    const relatedFromLeft = RELATED_POSITION_MAP[leftPosition] ?? []
-    if (relatedFromLeft.includes(rightPosition)) {
-        return true
-    }
-
-    const relatedFromRight = RELATED_POSITION_MAP[rightPosition] ?? []
-    return relatedFromRight.includes(leftPosition)
-}
-
 const calculatePositionScore = (
     playerPosition: string,
     listingPosition: string,
-    listingPreferredPositions?: string[],
 ): number | null => {
     const playerPositions = parsePlayerPositions(playerPosition)
-    const targetPositions = normalizeValues([listingPosition, ...(listingPreferredPositions ?? [])])
+    const normalizedListingPosition = toPositionName(listingPosition)
 
-    if (playerPositions.length === 0 || targetPositions.length === 0) {
+    if (playerPositions.length === 0 || !normalizedListingPosition) {
         return null
     }
 
+    let bestScore = 0
+
     for (const sourcePosition of playerPositions) {
-        if (targetPositions.includes(sourcePosition)) {
-            return 100
+        const normalizedSourcePosition = toPositionName(sourcePosition)
+
+        if (!normalizedSourcePosition) {
+            continue
+        }
+
+        const candidateScore = POSITION_SCORE_BY_TARGET[normalizedListingPosition][normalizedSourcePosition] ?? 0
+
+        if (candidateScore > bestScore) {
+            bestScore = candidateScore
         }
     }
 
-    for (const sourcePosition of playerPositions) {
-        for (const targetPosition of targetPositions) {
-            if (areRelatedPositions(sourcePosition, targetPosition)) {
-                return 75
+    return bestScore
+}
+
+const calculateLeagueTierScore = (
+    playerPreferenceValues: string[],
+    listingPreferenceValues: string[],
+    fallbackTeamValue: string,
+): number | null => {
+    const normalizedPlayerValues = Array.from(new Set(playerPreferenceValues.map(toLeagueTier).filter((value): value is LeagueTier => value !== null)))
+    const normalizedListingValues = Array.from(new Set(listingPreferenceValues.map(toLeagueTier).filter((value): value is LeagueTier => value !== null)))
+    const normalizedFallback = toLeagueTier(fallbackTeamValue)
+    const effectiveTargetValues =
+        normalizedListingValues.length > 0
+            ? normalizedListingValues
+            : normalizedFallback
+                ? [normalizedFallback]
+                : []
+
+    if (normalizedPlayerValues.length === 0 || effectiveTargetValues.length === 0) {
+        return null
+    }
+
+    let bestScore = 0
+
+    for (const sourceTier of normalizedPlayerValues) {
+        for (const targetTier of effectiveTargetValues) {
+            const candidateScore = LEAGUE_LADDER_SCORE_BY_SOURCE[sourceTier][targetTier] ?? 0
+
+            if (candidateScore > bestScore) {
+                bestScore = candidateScore
             }
         }
     }
 
-    return 0
+    return bestScore
 }
 
 const calculatePreferenceOverlapScore = (
@@ -194,9 +453,9 @@ export const calculatePlayerListingMatchScore = (
     input: PlayerListingMatchInput,
     weights: MatchWeights = DEFAULT_MATCH_WEIGHTS,
 ): MatchScoreBreakdown => {
-    const positionScore = calculatePositionScore(input.playerPosition, input.listingPosition, input.listingPreferredPositions)
+    const positionScore = calculatePositionScore(input.playerPosition, input.listingPosition)
 
-    const leagueScore = calculatePreferenceOverlapScore(
+    const leagueScore = calculateLeagueTierScore(
         input.playerPreferredLeagues,
         input.listingPreferredPlayerLeagues ?? [],
         input.teamLeague,
@@ -228,7 +487,6 @@ export const calculateApplicationFitScore = (
             playerPreferredLeagues: input.playerPreferredLeagues,
             playerPreferredLocations: input.playerPreferredLocations,
             listingPosition: input.listingPosition,
-            listingPreferredPositions: input.listingPreferredPositions,
             listingPreferredPlayerLeagues: input.listingPreferredPlayerLeagues,
             listingPreferredPlayerLocations: input.listingPreferredPlayerLocations,
             teamLeague: input.teamLeague,
