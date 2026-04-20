@@ -82,6 +82,7 @@ const ForYouPage = () => {
                     playerPreferredLeagues: profile.preferredLeagues,
                     playerPreferredLocations: profile.preferredLocations,
                     listingPosition: listing.position,
+                    listingPreferredPositions: listing.preferredPositions,
                     listingPreferredPlayerLeagues: listing.preferredPlayerLeagues,
                     listingPreferredPlayerLocations: listing.preferredPlayerLocations,
                     teamLeague: listing.teamLeague,
@@ -109,6 +110,7 @@ const ForYouPage = () => {
                     playerPreferredLeagues: application.playerPreferredLeagues,
                     playerPreferredLocations: application.playerPreferredLocations,
                     listingPosition: application.listingPosition,
+                    listingPreferredPositions: application.listingPreferredPositions,
                     listingPreferredPlayerLeagues: application.listingPreferredPlayerLeagues,
                     listingPreferredPlayerLocations: application.listingPreferredPlayerLocations,
                     teamLeague: application.teamLeague,
@@ -139,7 +141,7 @@ const ForYouPage = () => {
         }
 
         if (profile.preferredLeagues.length === 0) {
-            gaps.push('Add preferred league tiers to improve recommendation relevance.')
+            gaps.push('Add preferred leagues to improve recommendation relevance.')
         }
 
         if (profile.preferredLocations.length === 0) {
@@ -197,7 +199,7 @@ const ForYouPage = () => {
                         </div>
                     ) : (
                         <div className="empty-slot">
-                            Manager recommendation quality improves as applicants complete position, league tier, and location preferences.
+                            Manager recommendation quality improves as applicants complete position, league, and location preferences.
                         </div>
                     )}
                 </article>

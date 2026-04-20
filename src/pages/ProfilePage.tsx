@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import SiteNavbar from '../components/SiteNavbar'
-import { LEAGUE_TIER_OPTIONS, normalizeLeagueTierValues } from '../services/matching'
 import { getCurrentProfile, updateProfileIdentity, upsertProfile, type CurrentProfile } from '../services/profile'
 
 type HeightUnit = 'metric' | 'imperial'
@@ -73,7 +72,7 @@ const splitPositions = (value: string) => {
     return parsedPositions.length > 0 ? parsedPositions : ['']
 }
 
-const parseTextPreferenceInput = (value: string) => {
+const parsePreferenceInput = (value: string) => {
     const dedupedValues = new Set<string>()
 
     for (const token of value.split(',')) {
@@ -87,15 +86,6 @@ const parseTextPreferenceInput = (value: string) => {
     }
 
     return [...dedupedValues]
-}
-
-const parseLeagueTierInput = (value: string) => {
-    return normalizeLeagueTierValues(
-        value
-            .split(',')
-            .map((token) => token.trim())
-            .filter((token) => token.length > 0),
-    )
 }
 
 const isBlank = (value: string) => value.trim().length === 0
@@ -167,7 +157,7 @@ const ProfilePage = () => {
                             height: '180',
                             bio: 'Aggressive forward with a knack for late runs. Looking for a team that values pace and finishing.',
                             videoUrl: 'https://www.youtube.com/watch?v=playerdemo',
-                            preferredLeagues: ['SemiPro', 'Amateur'],
+                            preferredLeagues: ['Premier League', 'USL Championship'],
                             preferredLocations: ['Austin', 'Dallas'],
                         }
                         : {
@@ -384,8 +374,8 @@ const ProfilePage = () => {
 
         const positionValue = selectedPositions.filter((position) => position.length > 0).join(', ')
         const heightInCentimeters = isPlayer ? getHeightInCentimeters() : null
-        const parsedPreferredLeagues = parseLeagueTierInput(preferredLeaguesInput)
-        const parsedPreferredLocations = parseTextPreferenceInput(preferredLocationsInput)
+        const parsedPreferredLeagues = parsePreferenceInput(preferredLeaguesInput)
+        const parsedPreferredLocations = parsePreferenceInput(preferredLocationsInput)
 
         if (isPreviewMode) {
             setProfile((previousProfile) => {
@@ -746,17 +736,15 @@ const ProfilePage = () => {
                                                     {heightValidation.message}
                                                 </p>
 
-                                                <label htmlFor="preferredLeagues">Preferred league tiers</label>
+                                                <label htmlFor="preferredLeagues">Preferred leagues</label>
                                                 <input
                                                     id="preferredLeagues"
                                                     type="text"
                                                     value={preferredLeaguesInput}
                                                     onChange={(event) => setPreferredLeaguesInput(event.target.value)}
-                                                    placeholder="SemiPro, Amateur"
+                                                    placeholder="Premier League, USL Championship"
                                                 />
-                                                <p className="auth-helper-text">
-                                                    Optional. Available tiers: {LEAGUE_TIER_OPTIONS.join(', ')}.
-                                                </p>
+                                                <p className="auth-helper-text">Optional. Comma-separated values used for matching.</p>
 
                                                 <label htmlFor="preferredLocations">Preferred locations</label>
                                                 <input
