@@ -8,6 +8,8 @@ type CompleteProfilePayload = {
     height?: string
     bio?: string
     videoUrl?: string
+    preferredLeagues?: string[]
+    preferredLocations?: string[]
 }
 
 type CompleteProfileResult = {
@@ -32,6 +34,11 @@ type PlayerProfileRow = {
     url: string | null
 }
 
+type PlayerPreferenceRow = {
+    preferred_leagues: string[] | null
+    preferred_locations: string[] | null
+}
+
 type ManagerProfileRow = {
     bio: string | null
 }
@@ -46,6 +53,8 @@ export type CurrentProfile = {
     height: string
     bio: string
     videoUrl: string
+    preferredLeagues: string[]
+    preferredLocations: string[]
 }
 
 type CurrentProfileResult = {
@@ -57,6 +66,34 @@ type CurrentProfileResult = {
 const normalizeText = (value?: string) => {
     const normalizedValue = value?.trim() ?? ''
     return normalizedValue.length > 0 ? normalizedValue : null
+}
+
+const normalizePreferenceValues = (values?: string[]) => {
+    if (!values) {
+        return [] as string[]
+    }
+
+    const dedupedValues = new Set<string>()
+
+    for (const value of values) {
+        const normalizedValue = value.trim()
+
+        if (!normalizedValue) {
+            continue
+        }
+
+        dedupedValues.add(normalizedValue)
+    }
+
+    return [...dedupedValues]
+}
+
+const parsePreferenceValues = (value: unknown) => {
+    if (!Array.isArray(value)) {
+        return [] as string[]
+    }
+
+    return normalizePreferenceValues(value.filter((item): item is string => typeof item === 'string'))
 }
 
 const parseRole = (value: unknown): UserRole | null => {
@@ -99,6 +136,7 @@ const toCurrentProfile = (
     appUser: { email: string; name: string; role: UserRole },
     player: PlayerProfileRow | null,
     manager: ManagerProfileRow | null,
+    playerPreference: PlayerPreferenceRow | null,
 ): CurrentProfile => ({
     userId: user.id,
     email: appUser.email || user.email || '',
@@ -109,6 +147,8 @@ const toCurrentProfile = (
     height: player?.height === null || player?.height === undefined ? '' : String(player.height),
     bio: appUser.role === 'player' ? player?.bio ?? '' : manager?.bio ?? '',
     videoUrl: player?.url ?? '',
+    preferredLeagues: parsePreferenceValues(playerPreference?.preferred_leagues),
+    preferredLocations: parsePreferenceValues(playerPreference?.preferred_locations),
 })
 
 const parseHeight = (height?: string) => {
@@ -185,6 +225,7 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
 
     let playerRow: PlayerProfileRow | null = null
     let managerRow: ManagerProfileRow | null = null
+    let playerPreferenceRow: PlayerPreferenceRow | null = null
 
     if (resolvedRole === 'player') {
         const { data, error } = await supabase
@@ -198,6 +239,18 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
         }
 
         playerRow = (data as PlayerProfileRow | null) ?? null
+
+        const { data: preferenceData, error: preferenceError } = await supabase
+            .from('player_preference')
+            .select('preferred_leagues, preferred_locations')
+            .eq('user_id', user.id)
+            .maybeSingle()
+
+        if (preferenceError) {
+            return { ok: false, message: preferenceError.message }
+        }
+
+        playerPreferenceRow = (preferenceData as PlayerPreferenceRow | null) ?? null
     } else {
         const { data, error } = await supabase
             .from('manager')
@@ -223,11 +276,12 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
             },
             playerRow,
             managerRow,
+            playerPreferenceRow,
         ),
     }
 }
 
-export const upsertProfile = async ({ role, birthday, position, height, bio, videoUrl }: CompleteProfilePayload): Promise<CompleteProfileResult> => {
+export const upsertProfile = async ({ role, birthday, position, height, bio, videoUrl, preferredLeagues, preferredLocations }: CompleteProfilePayload): Promise<CompleteProfileResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
@@ -298,6 +352,27 @@ export const upsertProfile = async ({ role, birthday, position, height, bio, vid
 
     if (upsertPlayerError) {
         return { ok: false, message: upsertPlayerError.message }
+    }
+
+    if (preferredLeagues !== undefined || preferredLocations !== undefined) {
+        const { error: upsertPreferenceError } = await supabase.from('player_preference').upsert(
+            {
+                user_id: user.id,
+                ...(preferredLeagues !== undefined
+                    ? { preferred_leagues: normalizePreferenceValues(preferredLeagues) }
+                    : {}),
+                ...(preferredLocations !== undefined
+                    ? { preferred_locations: normalizePreferenceValues(preferredLocations) }
+                    : {}),
+            },
+            {
+                onConflict: 'user_id',
+            },
+        )
+
+        if (upsertPreferenceError) {
+            return { ok: false, message: upsertPreferenceError.message }
+        }
     }
 
     return { ok: true }

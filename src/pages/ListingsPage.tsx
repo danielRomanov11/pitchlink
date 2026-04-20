@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import SiteNavbar from '../components/SiteNavbar'
 import {
@@ -10,11 +10,13 @@ import type { UserRole } from '../services/auth'
 import {
     createListing,
     getListingsForCurrentUser,
+    updateListingPreference,
     updateListingStatus,
     type ListingRecord,
     type ListingStatus,
 } from '../services/listing'
-import { getCurrentProfile } from '../services/profile'
+import { calculatePlayerListingMatchScore } from '../services/matching'
+import { getCurrentProfile, type CurrentProfile } from '../services/profile'
 import { getTeamsForCurrentUser, type TeamRecord } from '../services/team'
 
 const listingPositionOptions = [
@@ -32,8 +34,31 @@ const listingPositionOptions = [
     'Striker',
 ]
 
+const parsePreferenceInput = (value: string) => {
+    const dedupedValues = new Set<string>()
+
+    for (const token of value.split(',')) {
+        const normalizedToken = token.trim()
+
+        if (!normalizedToken) {
+            continue
+        }
+
+        dedupedValues.add(normalizedToken)
+    }
+
+    return [...dedupedValues]
+}
+
+type ListingPreferenceDraft = {
+    preferredPositions: string
+    preferredPlayerLeagues: string
+    preferredPlayerLocations: string
+}
+
 const ListingsPage = () => {
     const [role, setRole] = useState<UserRole | null>(null)
+    const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(null)
     const [teams, setTeams] = useState<TeamRecord[]>([])
     const [listings, setListings] = useState<ListingRecord[]>([])
     const [applicationMessages, setApplicationMessages] = useState<Record<string, string>>({})
@@ -42,6 +67,8 @@ const ListingsPage = () => {
     const [isCreatingListing, setIsCreatingListing] = useState(false)
     const [activeApplyListingId, setActiveApplyListingId] = useState<string | null>(null)
     const [activeListingStatusId, setActiveListingStatusId] = useState<string | null>(null)
+    const [activeListingPreferenceId, setActiveListingPreferenceId] = useState<string | null>(null)
+    const [listingPreferenceDrafts, setListingPreferenceDrafts] = useState<Record<string, ListingPreferenceDraft>>({})
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
 
@@ -54,6 +81,46 @@ const ListingsPage = () => {
     ]
 
     const totalApplicants = listings.reduce((sum, listing) => sum + listing.applicants, 0)
+
+    const listingMatchScores = useMemo(() => {
+        if (role !== 'player' || !currentProfile) {
+            return {} as Record<string, number>
+        }
+
+        return listings.reduce<Record<string, number>>((scoresByListing, listing) => {
+            const score = calculatePlayerListingMatchScore({
+                playerPosition: currentProfile.position,
+                playerPreferredLeagues: currentProfile.preferredLeagues,
+                playerPreferredLocations: currentProfile.preferredLocations,
+                listingPosition: listing.position,
+                listingPreferredPositions: listing.preferredPositions,
+                listingPreferredPlayerLeagues: listing.preferredPlayerLeagues,
+                listingPreferredPlayerLocations: listing.preferredPlayerLocations,
+                teamLeague: listing.teamLeague,
+                teamLocation: listing.teamLocation,
+            }).totalScore
+
+            scoresByListing[listing.id] = score
+            return scoresByListing
+        }, {})
+    }, [currentProfile, listings, role])
+
+    const displayListings = useMemo(() => {
+        if (role !== 'player') {
+            return listings
+        }
+
+        return [...listings].sort((leftListing, rightListing) => {
+            const leftScore = listingMatchScores[leftListing.id] ?? 0
+            const rightScore = listingMatchScores[rightListing.id] ?? 0
+
+            if (rightScore === leftScore) {
+                return leftListing.position.localeCompare(rightListing.position)
+            }
+
+            return rightScore - leftScore
+        })
+    }, [listings, listingMatchScores, role])
 
     useEffect(() => {
         const loadPage = async () => {
@@ -72,6 +139,7 @@ const ListingsPage = () => {
 
             const currentRole = profileResult.profile.role
             setRole(currentRole)
+            setCurrentProfile(profileResult.profile)
 
             const listingResult = await getListingsForCurrentUser(currentRole)
 
@@ -126,6 +194,39 @@ const ListingsPage = () => {
         void loadPage()
     }, [])
 
+    const getListingPreferenceDraft = (listing: ListingRecord): ListingPreferenceDraft => {
+        return listingPreferenceDrafts[listing.id] ?? {
+            preferredPositions: listing.preferredPositions.join(', '),
+            preferredPlayerLeagues: listing.preferredPlayerLeagues.join(', '),
+            preferredPlayerLocations: listing.preferredPlayerLocations.join(', '),
+        }
+    }
+
+    const handleListingPreferenceFieldChange = (
+        listingId: string,
+        field: keyof ListingPreferenceDraft,
+        value: string,
+    ) => {
+        setListingPreferenceDrafts((previousDrafts) => ({
+            ...previousDrafts,
+            [listingId]: {
+                preferredPositions:
+                    previousDrafts[listingId]?.preferredPositions
+                    ?? listings.find((listing) => listing.id === listingId)?.preferredPositions.join(', ')
+                    ?? '',
+                preferredPlayerLeagues:
+                    previousDrafts[listingId]?.preferredPlayerLeagues
+                    ?? listings.find((listing) => listing.id === listingId)?.preferredPlayerLeagues.join(', ')
+                    ?? '',
+                preferredPlayerLocations:
+                    previousDrafts[listingId]?.preferredPlayerLocations
+                    ?? listings.find((listing) => listing.id === listingId)?.preferredPlayerLocations.join(', ')
+                    ?? '',
+                [field]: value,
+            },
+        }))
+    }
+
     const handleListingCreate = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
 
@@ -141,8 +242,18 @@ const ListingsPage = () => {
         const teamId = String(formData.get('teamId') ?? '')
         const position = String(formData.get('position') ?? '')
         const description = String(formData.get('description') ?? '')
+        const preferredPositions = parsePreferenceInput(String(formData.get('preferredPositions') ?? ''))
+        const preferredPlayerLeagues = parsePreferenceInput(String(formData.get('preferredPlayerLeagues') ?? ''))
+        const preferredPlayerLocations = parsePreferenceInput(String(formData.get('preferredPlayerLocations') ?? ''))
 
-        const result = await createListing({ teamId, position, description })
+        const result = await createListing({
+            teamId,
+            position,
+            description,
+            preferredPositions,
+            preferredPlayerLeagues,
+            preferredPlayerLocations,
+        })
 
         setIsCreatingListing(false)
 
@@ -244,6 +355,64 @@ const ListingsPage = () => {
         setStatusMessage('Listing status updated.')
     }
 
+    const handleUpdateListingPreference = async (listing: ListingRecord) => {
+        if (role !== 'manager') {
+            return
+        }
+
+        const draft = getListingPreferenceDraft(listing)
+
+        const normalizedPreferredPositions = parsePreferenceInput(draft.preferredPositions)
+        const normalizedPreferredPlayerLeagues = parsePreferenceInput(draft.preferredPlayerLeagues)
+        const normalizedPreferredPlayerLocations = parsePreferenceInput(draft.preferredPlayerLocations)
+
+        setStatusMessage(null)
+        setStatusType(null)
+        setActiveListingPreferenceId(listing.id)
+
+        const result = await updateListingPreference({
+            listingId: listing.id,
+            preferredPositions: normalizedPreferredPositions,
+            preferredPlayerLeagues: normalizedPreferredPlayerLeagues,
+            preferredPlayerLocations: normalizedPreferredPlayerLocations,
+        })
+
+        setActiveListingPreferenceId(null)
+
+        if (!result.ok) {
+            setStatusType('error')
+            setStatusMessage(result.message ?? 'Unable to update listing preferences.')
+            return
+        }
+
+        setListings((previousListings) =>
+            previousListings.map((previousListing) => {
+                if (previousListing.id !== listing.id) {
+                    return previousListing
+                }
+
+                return {
+                    ...previousListing,
+                    preferredPositions: normalizedPreferredPositions,
+                    preferredPlayerLeagues: normalizedPreferredPlayerLeagues,
+                    preferredPlayerLocations: normalizedPreferredPlayerLocations,
+                }
+            }),
+        )
+
+        setListingPreferenceDrafts((previousDrafts) => ({
+            ...previousDrafts,
+            [listing.id]: {
+                preferredPositions: normalizedPreferredPositions.join(', '),
+                preferredPlayerLeagues: normalizedPreferredPlayerLeagues.join(', '),
+                preferredPlayerLocations: normalizedPreferredPlayerLocations.join(', '),
+            },
+        }))
+
+        setStatusType('success')
+        setStatusMessage('Listing preferences updated.')
+    }
+
     return (
         <main className="app-page listings-page">
             <section className="app-hero listings-page-hero">
@@ -307,6 +476,30 @@ const ListingsPage = () => {
                                 <label htmlFor="listing-description">Description</label>
                                 <textarea id="listing-description" name="description" rows={3} />
 
+                                <label htmlFor="listing-preferred-positions">Preferred player positions (optional)</label>
+                                <input
+                                    id="listing-preferred-positions"
+                                    name="preferredPositions"
+                                    type="text"
+                                    placeholder="Left Winger, Right Winger"
+                                />
+
+                                <label htmlFor="listing-preferred-leagues">Preferred player leagues (optional)</label>
+                                <input
+                                    id="listing-preferred-leagues"
+                                    name="preferredPlayerLeagues"
+                                    type="text"
+                                    placeholder="USL League One, MLS Next Pro"
+                                />
+
+                                <label htmlFor="listing-preferred-locations">Preferred player locations (optional)</label>
+                                <input
+                                    id="listing-preferred-locations"
+                                    name="preferredPlayerLocations"
+                                    type="text"
+                                    placeholder="Austin, Dallas"
+                                />
+
                                 <button className="primary-button" type="submit" disabled={isCreatingListing}>
                                     {isCreatingListing ? 'Creating listing...' : 'Create listing'}
                                 </button>
@@ -324,7 +517,7 @@ const ListingsPage = () => {
                         Each listing includes the team posting it, role title, short role brief, and applicant momentum.
                     </p>
                     <div className="listing-board">
-                        {listings.map((listing) => (
+                        {displayListings.map((listing) => (
                             <article className="listing-entry" key={listing.id}>
                                 <header className="listing-entry-header">
                                     <p className="listing-team">{listing.teamName}</p>
@@ -334,6 +527,7 @@ const ListingsPage = () => {
                                 </header>
                                 <h4>{listing.position}</h4>
                                 <p className={`status-chip ${listing.status}`}>Listing {listing.status}</p>
+                                {role === 'player' && <p className="status-chip">Match {listingMatchScores[listing.id] ?? 0}%</p>}
                                 <p>{listing.description}</p>
 
                                 {role === 'player' && (
@@ -369,24 +563,80 @@ const ListingsPage = () => {
                                 )}
 
                                 {role === 'manager' && (
-                                    <div className="role-switcher" role="group" aria-label="Edit listing status">
+                                    <>
+                                        <div className="role-switcher" role="group" aria-label="Edit listing status">
+                                            <button
+                                                className={`secondary-button role-switcher-button ${listing.status === 'open' ? 'active' : ''}`}
+                                                type="button"
+                                                onClick={() => void handleUpdateListingStatus(listing, 'open')}
+                                                disabled={activeListingStatusId === listing.id}
+                                            >
+                                                Open
+                                            </button>
+                                            <button
+                                                className={`secondary-button role-switcher-button ${listing.status === 'closed' ? 'active' : ''}`}
+                                                type="button"
+                                                onClick={() => void handleUpdateListingStatus(listing, 'closed')}
+                                                disabled={activeListingStatusId === listing.id}
+                                            >
+                                                Closed
+                                            </button>
+                                        </div>
+
+                                        <label htmlFor={`listing-preferred-positions-${listing.id}`}>Preferred player positions</label>
+                                        <input
+                                            id={`listing-preferred-positions-${listing.id}`}
+                                            type="text"
+                                            value={getListingPreferenceDraft(listing).preferredPositions}
+                                            onChange={(event) =>
+                                                handleListingPreferenceFieldChange(
+                                                    listing.id,
+                                                    'preferredPositions',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Left Winger, Right Winger"
+                                        />
+
+                                        <label htmlFor={`listing-preferred-leagues-${listing.id}`}>Preferred player leagues</label>
+                                        <input
+                                            id={`listing-preferred-leagues-${listing.id}`}
+                                            type="text"
+                                            value={getListingPreferenceDraft(listing).preferredPlayerLeagues}
+                                            onChange={(event) =>
+                                                handleListingPreferenceFieldChange(
+                                                    listing.id,
+                                                    'preferredPlayerLeagues',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="USL League One, MLS Next Pro"
+                                        />
+
+                                        <label htmlFor={`listing-preferred-locations-${listing.id}`}>Preferred player locations</label>
+                                        <input
+                                            id={`listing-preferred-locations-${listing.id}`}
+                                            type="text"
+                                            value={getListingPreferenceDraft(listing).preferredPlayerLocations}
+                                            onChange={(event) =>
+                                                handleListingPreferenceFieldChange(
+                                                    listing.id,
+                                                    'preferredPlayerLocations',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Austin, Dallas"
+                                        />
+
                                         <button
-                                            className={`secondary-button role-switcher-button ${listing.status === 'open' ? 'active' : ''}`}
+                                            className="secondary-button"
                                             type="button"
-                                            onClick={() => void handleUpdateListingStatus(listing, 'open')}
-                                            disabled={activeListingStatusId === listing.id}
+                                            onClick={() => void handleUpdateListingPreference(listing)}
+                                            disabled={activeListingPreferenceId === listing.id}
                                         >
-                                            Open
+                                            {activeListingPreferenceId === listing.id ? 'Saving preferences...' : 'Save preferences'}
                                         </button>
-                                        <button
-                                            className={`secondary-button role-switcher-button ${listing.status === 'closed' ? 'active' : ''}`}
-                                            type="button"
-                                            onClick={() => void handleUpdateListingStatus(listing, 'closed')}
-                                            disabled={activeListingStatusId === listing.id}
-                                        >
-                                            Closed
-                                        </button>
-                                    </div>
+                                    </>
                                 )}
                             </article>
                         ))}

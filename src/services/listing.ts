@@ -12,6 +12,9 @@ export type ListingRecord = {
     teamName: string
     teamLeague: string
     teamLocation: string
+    preferredPositions: string[]
+    preferredPlayerLeagues: string[]
+    preferredPlayerLocations: string[]
     applicants: number
 }
 
@@ -26,6 +29,9 @@ type CreateListingPayload = {
     status?: ListingStatus
     description: string
     position: string
+    preferredPositions?: string[]
+    preferredPlayerLeagues?: string[]
+    preferredPlayerLocations?: string[]
 }
 
 type CreateListingResult = {
@@ -40,7 +46,25 @@ type UpdateListingStatusResult = {
     listing?: ListingRecord
 }
 
+type UpdateListingPreferencePayload = {
+    listingId: string
+    preferredPositions?: string[]
+    preferredPlayerLeagues?: string[]
+    preferredPlayerLocations?: string[]
+}
+
+type UpdateListingPreferenceResult = {
+    ok: boolean
+    message?: string
+}
+
 const missingConfigMessage = 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+
+type ListingPreferenceRow = {
+    preferred_positions: string[] | null
+    preferred_player_leagues: string[] | null
+    preferred_player_locations: string[] | null
+}
 
 type ListingRow = {
     id: string
@@ -64,6 +88,38 @@ type ListingRow = {
         manager_id: string
     }>
     | null
+    listing_preference:
+    | ListingPreferenceRow
+    | Array<ListingPreferenceRow>
+    | null
+}
+
+const normalizePreferenceValues = (values?: string[]) => {
+    if (!values) {
+        return [] as string[]
+    }
+
+    const dedupedValues = new Set<string>()
+
+    for (const value of values) {
+        const normalizedValue = value.trim()
+
+        if (!normalizedValue) {
+            continue
+        }
+
+        dedupedValues.add(normalizedValue)
+    }
+
+    return [...dedupedValues]
+}
+
+const parsePreferenceValues = (value: unknown) => {
+    if (!Array.isArray(value)) {
+        return [] as string[]
+    }
+
+    return normalizePreferenceValues(value.filter((item): item is string => typeof item === 'string'))
 }
 
 const pickTeam = (team: ListingRow['team']) => {
@@ -72,6 +128,14 @@ const pickTeam = (team: ListingRow['team']) => {
     }
 
     return team
+}
+
+const pickListingPreference = (listingPreference: ListingRow['listing_preference']) => {
+    if (Array.isArray(listingPreference)) {
+        return listingPreference[0] ?? null
+    }
+
+    return listingPreference
 }
 
 const toListingRecord = (row: ListingRow, applicants: number): ListingRecord => ({
@@ -83,6 +147,9 @@ const toListingRecord = (row: ListingRow, applicants: number): ListingRecord => 
     teamName: pickTeam(row.team)?.name ?? 'Unknown Team',
     teamLeague: pickTeam(row.team)?.league ?? '',
     teamLocation: pickTeam(row.team)?.location ?? '',
+    preferredPositions: parsePreferenceValues(pickListingPreference(row.listing_preference)?.preferred_positions),
+    preferredPlayerLeagues: parsePreferenceValues(pickListingPreference(row.listing_preference)?.preferred_player_leagues),
+    preferredPlayerLocations: parsePreferenceValues(pickListingPreference(row.listing_preference)?.preferred_player_locations),
     applicants,
 })
 
@@ -116,7 +183,9 @@ export const getListingsForCurrentUser = async (role: UserRole): Promise<Listing
 
     let query = supabase
         .from('listing')
-        .select('id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id)')
+        .select(
+            'id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id), listing_preference(preferred_positions, preferred_player_leagues, preferred_player_locations)',
+        )
         .order('created_at', { ascending: false })
 
     if (role === 'manager') {
@@ -141,7 +210,15 @@ export const getListingsForCurrentUser = async (role: UserRole): Promise<Listing
     }
 }
 
-export const createListing = async ({ teamId, status = 'open', description, position }: CreateListingPayload): Promise<CreateListingResult> => {
+export const createListing = async ({
+    teamId,
+    status = 'open',
+    description,
+    position,
+    preferredPositions,
+    preferredPlayerLeagues,
+    preferredPlayerLocations,
+}: CreateListingPayload): Promise<CreateListingResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
@@ -167,14 +244,45 @@ export const createListing = async ({ teamId, status = 'open', description, posi
             position: normalizedPosition,
             team_id: teamId,
         })
-        .select('id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id)')
+        .select(
+            'id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id), listing_preference(preferred_positions, preferred_player_leagues, preferred_player_locations)',
+        )
         .single()
 
     if (error) {
         return { ok: false, message: error.message }
     }
 
-    const listing = toListingRecord(data as unknown as ListingRow, 0)
+    const normalizedPreferredPositions = normalizePreferenceValues(preferredPositions)
+    const normalizedPreferredPlayerLeagues = normalizePreferenceValues(preferredPlayerLeagues)
+    const normalizedPreferredPlayerLocations = normalizePreferenceValues(preferredPlayerLocations)
+
+    const { error: listingPreferenceError } = await supabase.from('listing_preference').upsert(
+        {
+            listing_id: data.id,
+            preferred_positions: normalizedPreferredPositions,
+            preferred_player_leagues: normalizedPreferredPlayerLeagues,
+            preferred_player_locations: normalizedPreferredPlayerLocations,
+        },
+        {
+            onConflict: 'listing_id',
+        },
+    )
+
+    if (listingPreferenceError) {
+        return { ok: false, message: listingPreferenceError.message }
+    }
+
+    const listingWithPreferences: ListingRow = {
+        ...(data as unknown as ListingRow),
+        listing_preference: {
+            preferred_positions: normalizedPreferredPositions,
+            preferred_player_leagues: normalizedPreferredPlayerLeagues,
+            preferred_player_locations: normalizedPreferredPlayerLocations,
+        },
+    }
+
+    const listing = toListingRecord(listingWithPreferences, 0)
 
     return {
         ok: true,
@@ -203,7 +311,9 @@ export const updateListingStatus = async (listingId: string, status: ListingStat
         .from('listing')
         .update({ status })
         .eq('id', normalizedListingId)
-        .select('id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id)')
+        .select(
+            'id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id), listing_preference(preferred_positions, preferred_player_leagues, preferred_player_locations)',
+        )
         .single()
 
     if (error) {
@@ -238,7 +348,9 @@ export const getListingsForTeamId = async (teamId: string): Promise<ListingResul
 
     const { data, error } = await supabase
         .from('listing')
-        .select('id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id)')
+        .select(
+            'id, status, description, position, team_id, team:team!inner(id, name, league, location, manager_id), listing_preference(preferred_positions, preferred_player_leagues, preferred_player_locations)',
+        )
         .eq('team_id', normalizedTeamId)
         .order('created_at', { ascending: false })
 
@@ -254,4 +366,58 @@ export const getListingsForTeamId = async (teamId: string): Promise<ListingResul
         ok: true,
         listings: rows.map((row) => toListingRecord(row, applicantCounts.get(row.id) ?? 0)),
     }
+}
+
+export const updateListingPreference = async ({
+    listingId,
+    preferredPositions,
+    preferredPlayerLeagues,
+    preferredPlayerLocations,
+}: UpdateListingPreferencePayload): Promise<UpdateListingPreferenceResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedListingId = listingId.trim()
+
+    if (!normalizedListingId) {
+        return { ok: false, message: 'A listing id is required.' }
+    }
+
+    const updatePayload: {
+        listing_id: string
+        preferred_positions?: string[]
+        preferred_player_leagues?: string[]
+        preferred_player_locations?: string[]
+    } = {
+        listing_id: normalizedListingId,
+    }
+
+    if (preferredPositions !== undefined) {
+        updatePayload.preferred_positions = normalizePreferenceValues(preferredPositions)
+    }
+
+    if (preferredPlayerLeagues !== undefined) {
+        updatePayload.preferred_player_leagues = normalizePreferenceValues(preferredPlayerLeagues)
+    }
+
+    if (preferredPlayerLocations !== undefined) {
+        updatePayload.preferred_player_locations = normalizePreferenceValues(preferredPlayerLocations)
+    }
+
+    const { error } = await supabase.from('listing_preference').upsert(updatePayload, {
+        onConflict: 'listing_id',
+    })
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    return { ok: true }
 }

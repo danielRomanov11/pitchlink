@@ -72,6 +72,22 @@ const splitPositions = (value: string) => {
     return parsedPositions.length > 0 ? parsedPositions : ['']
 }
 
+const parsePreferenceInput = (value: string) => {
+    const dedupedValues = new Set<string>()
+
+    for (const token of value.split(',')) {
+        const normalizedToken = token.trim()
+
+        if (!normalizedToken) {
+            continue
+        }
+
+        dedupedValues.add(normalizedToken)
+    }
+
+    return [...dedupedValues]
+}
+
 const isBlank = (value: string) => value.trim().length === 0
 
 const buildInitials = (displayName: string) => {
@@ -110,6 +126,8 @@ const ProfilePage = () => {
     const [fullNameInput, setFullNameInput] = useState('')
     const [bioInput, setBioInput] = useState('')
     const [videoUrlInput, setVideoUrlInput] = useState('')
+    const [preferredLeaguesInput, setPreferredLeaguesInput] = useState('')
+    const [preferredLocationsInput, setPreferredLocationsInput] = useState('')
 
     const navLinks = [
         { label: 'Teams', href: '/teams' },
@@ -139,6 +157,8 @@ const ProfilePage = () => {
                             height: '180',
                             bio: 'Aggressive forward with a knack for late runs. Looking for a team that values pace and finishing.',
                             videoUrl: 'https://www.youtube.com/watch?v=playerdemo',
+                            preferredLeagues: ['Premier League', 'USL Championship'],
+                            preferredLocations: ['Austin', 'Dallas'],
                         }
                         : {
                             userId: 'demo-manager-456',
@@ -150,6 +170,8 @@ const ProfilePage = () => {
                             height: '',
                             bio: 'Manager for City United FC. Focused on building a dynamic, youth-driven squad for the upcoming season.',
                             videoUrl: 'https://www.youtube.com/watch?v=managerdemo',
+                            preferredLeagues: [],
+                            preferredLocations: [],
                         }
 
                 setProfile(demoProfile)
@@ -162,6 +184,8 @@ const ProfilePage = () => {
                 setFullNameInput(demoProfile.fullName)
                 setBioInput(demoProfile.bio)
                 setVideoUrlInput(demoProfile.videoUrl)
+                setPreferredLeaguesInput(demoProfile.preferredLeagues.join(', '))
+                setPreferredLocationsInput(demoProfile.preferredLocations.join(', '))
                 setIsLoading(false)
                 setLoadMessage(null)
                 return
@@ -191,6 +215,8 @@ const ProfilePage = () => {
             setFullNameInput(loadedProfile.fullName)
             setBioInput(loadedProfile.bio)
             setVideoUrlInput(loadedProfile.videoUrl)
+            setPreferredLeaguesInput(loadedProfile.preferredLeagues.join(', '))
+            setPreferredLocationsInput(loadedProfile.preferredLocations.join(', '))
             setIsLoading(false)
         }
 
@@ -348,6 +374,8 @@ const ProfilePage = () => {
 
         const positionValue = selectedPositions.filter((position) => position.length > 0).join(', ')
         const heightInCentimeters = isPlayer ? getHeightInCentimeters() : null
+        const parsedPreferredLeagues = parsePreferenceInput(preferredLeaguesInput)
+        const parsedPreferredLocations = parsePreferenceInput(preferredLocationsInput)
 
         if (isPreviewMode) {
             setProfile((previousProfile) => {
@@ -363,6 +391,8 @@ const ProfilePage = () => {
                     height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
                     bio: bioInput,
                     videoUrl: isPlayer ? videoUrlInput : '',
+                    preferredLeagues: isPlayer ? parsedPreferredLeagues : [],
+                    preferredLocations: isPlayer ? parsedPreferredLocations : [],
                 }
             })
 
@@ -391,6 +421,8 @@ const ProfilePage = () => {
             height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
             bio: bioInput,
             videoUrl: isPlayer ? videoUrlInput : '',
+            preferredLeagues: isPlayer ? parsedPreferredLeagues : undefined,
+            preferredLocations: isPlayer ? parsedPreferredLocations : undefined,
         })
 
         if (!result.ok) {
@@ -413,6 +445,8 @@ const ProfilePage = () => {
                 height: isPlayer && heightInCentimeters !== null ? formatNumber(heightInCentimeters) : '',
                 bio: bioInput,
                 videoUrl: isPlayer ? videoUrlInput : '',
+                preferredLeagues: isPlayer ? parsedPreferredLeagues : [],
+                preferredLocations: isPlayer ? parsedPreferredLocations : [],
             }
         })
 
@@ -701,6 +735,26 @@ const ProfilePage = () => {
                                                 <p className={`auth-helper-text ${heightValidation.type === 'error' ? 'error' : ''}`}>
                                                     {heightValidation.message}
                                                 </p>
+
+                                                <label htmlFor="preferredLeagues">Preferred leagues</label>
+                                                <input
+                                                    id="preferredLeagues"
+                                                    type="text"
+                                                    value={preferredLeaguesInput}
+                                                    onChange={(event) => setPreferredLeaguesInput(event.target.value)}
+                                                    placeholder="Premier League, USL Championship"
+                                                />
+                                                <p className="auth-helper-text">Optional. Comma-separated values used for matching.</p>
+
+                                                <label htmlFor="preferredLocations">Preferred locations</label>
+                                                <input
+                                                    id="preferredLocations"
+                                                    type="text"
+                                                    value={preferredLocationsInput}
+                                                    onChange={(event) => setPreferredLocationsInput(event.target.value)}
+                                                    placeholder="Austin, Dallas"
+                                                />
+                                                <p className="auth-helper-text">Optional. Comma-separated values used for matching.</p>
                                             </>
                                         ) : (
                                             <p className="auth-helper-text">

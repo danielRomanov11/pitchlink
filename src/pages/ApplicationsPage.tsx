@@ -7,6 +7,7 @@ import {
     type ApplicationStatus,
 } from '../services/application'
 import type { UserRole } from '../services/auth'
+import { calculateApplicationFitScore } from '../services/matching'
 import { getCurrentProfile } from '../services/profile'
 
 const ApplicationsPage = () => {
@@ -60,12 +61,47 @@ const ApplicationsPage = () => {
     }, [])
 
     const groupedApplications = useMemo(() => {
-        return {
-            pending: applications.filter((application) => application.status === 'pending'),
-            accepted: applications.filter((application) => application.status === 'accepted'),
-            declined: applications.filter((application) => application.status === 'declined'),
+        const scoreForApplication = (application: ApplicationRecord) => {
+            if (role !== 'manager') {
+                return 0
+            }
+
+            return calculateApplicationFitScore({
+                playerPosition: application.playerPosition,
+                playerPreferredLeagues: application.playerPreferredLeagues,
+                playerPreferredLocations: application.playerPreferredLocations,
+                listingPosition: application.listingPosition,
+                listingPreferredPositions: application.listingPreferredPositions,
+                listingPreferredPlayerLeagues: application.listingPreferredPlayerLeagues,
+                listingPreferredPlayerLocations: application.listingPreferredPlayerLocations,
+                teamLeague: application.teamLeague,
+                teamLocation: application.teamLocation,
+            }).totalScore
         }
-    }, [applications])
+
+        const sortByScore = (items: ApplicationRecord[]) => {
+            if (role !== 'manager') {
+                return items
+            }
+
+            return [...items].sort((leftApplication, rightApplication) => {
+                const leftScore = scoreForApplication(leftApplication)
+                const rightScore = scoreForApplication(rightApplication)
+
+                if (rightScore === leftScore) {
+                    return new Date(rightApplication.createdAt).getTime() - new Date(leftApplication.createdAt).getTime()
+                }
+
+                return rightScore - leftScore
+            })
+        }
+
+        return {
+            pending: sortByScore(applications.filter((application) => application.status === 'pending')),
+            accepted: sortByScore(applications.filter((application) => application.status === 'accepted')),
+            declined: sortByScore(applications.filter((application) => application.status === 'declined')),
+        }
+    }, [applications, role])
 
     const updateStatus = async (applicationId: string, status: ApplicationStatus) => {
         if (role !== 'manager') {
@@ -118,6 +154,24 @@ const ApplicationsPage = () => {
                                 <p className="listing-applicants">{application.status}</p>
                             </header>
                             <h4>{application.listingPosition}</h4>
+                            {role === 'manager' && (
+                                <p className="status-chip">
+                                    Fit {
+                                        calculateApplicationFitScore({
+                                            playerPosition: application.playerPosition,
+                                            playerPreferredLeagues: application.playerPreferredLeagues,
+                                            playerPreferredLocations: application.playerPreferredLocations,
+                                            listingPosition: application.listingPosition,
+                                            listingPreferredPositions: application.listingPreferredPositions,
+                                            listingPreferredPlayerLeagues: application.listingPreferredPlayerLeagues,
+                                            listingPreferredPlayerLocations: application.listingPreferredPlayerLocations,
+                                            teamLeague: application.teamLeague,
+                                            teamLocation: application.teamLocation,
+                                        }).totalScore
+                                    }
+                                    %
+                                </p>
+                            )}
                             <p>{application.message || 'No message provided.'}</p>
 
                             {role === 'manager' && application.status === 'pending' && (

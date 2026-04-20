@@ -11,7 +11,15 @@ export type ApplicationRecord = {
     teamId: string
     listingId: string
     teamName: string
+    teamLeague: string
+    teamLocation: string
     listingPosition: string
+    listingPreferredPositions: string[]
+    listingPreferredPlayerLeagues: string[]
+    listingPreferredPlayerLocations: string[]
+    playerPosition: string
+    playerPreferredLeagues: string[]
+    playerPreferredLocations: string[]
     createdAt: string
 }
 
@@ -46,20 +54,100 @@ type ApplicationRow = {
     | {
         name: string
         manager_id?: string
+        league?: string
+        location?: string
     }
     | Array<{
         name: string
         manager_id?: string
+        league?: string
+        location?: string
     }>
     | null
     listing:
     | {
         position: string
+        listing_preference:
+        | {
+            preferred_positions: string[] | null
+            preferred_player_leagues: string[] | null
+            preferred_player_locations: string[] | null
+        }
+        | Array<{
+            preferred_positions: string[] | null
+            preferred_player_leagues: string[] | null
+            preferred_player_locations: string[] | null
+        }>
+        | null
     }
     | Array<{
         position: string
+        listing_preference:
+        | {
+            preferred_positions: string[] | null
+            preferred_player_leagues: string[] | null
+            preferred_player_locations: string[] | null
+        }
+        | Array<{
+            preferred_positions: string[] | null
+            preferred_player_leagues: string[] | null
+            preferred_player_locations: string[] | null
+        }>
+        | null
     }>
     | null
+    player:
+    | {
+        position: string | null
+        player_preference:
+        | {
+            preferred_leagues: string[] | null
+            preferred_locations: string[] | null
+        }
+        | Array<{
+            preferred_leagues: string[] | null
+            preferred_locations: string[] | null
+        }>
+        | null
+    }
+    | Array<{
+        position: string | null
+        player_preference:
+        | {
+            preferred_leagues: string[] | null
+            preferred_locations: string[] | null
+        }
+        | Array<{
+            preferred_leagues: string[] | null
+            preferred_locations: string[] | null
+        }>
+        | null
+    }>
+    | null
+}
+
+const parsePreferenceValues = (value: unknown) => {
+    if (!Array.isArray(value)) {
+        return [] as string[]
+    }
+
+    const deduped = new Set<string>()
+
+    for (const entry of value) {
+        if (typeof entry !== 'string') {
+            continue
+        }
+
+        const normalized = entry.trim()
+
+        if (!normalized) {
+            continue
+        }
+
+        deduped.add(normalized)
+    }
+
+    return [...deduped]
 }
 
 const pickTeam = (team: ApplicationRow['team']) => {
@@ -78,6 +166,56 @@ const pickListing = (listing: ApplicationRow['listing']) => {
     return listing
 }
 
+const pickPlayer = (player: ApplicationRow['player']) => {
+    if (Array.isArray(player)) {
+        return player[0] ?? null
+    }
+
+    return player
+}
+
+const pickListingPreference = (
+    listingPreference:
+        | {
+            preferred_positions: string[] | null
+            preferred_player_leagues: string[] | null
+            preferred_player_locations: string[] | null
+        }
+        | Array<{
+            preferred_positions: string[] | null
+            preferred_player_leagues: string[] | null
+            preferred_player_locations: string[] | null
+        }>
+        | null
+        | undefined,
+) => {
+    if (Array.isArray(listingPreference)) {
+        return listingPreference[0] ?? null
+    }
+
+    return listingPreference ?? null
+}
+
+const pickPlayerPreference = (
+    playerPreference:
+        | {
+            preferred_leagues: string[] | null
+            preferred_locations: string[] | null
+        }
+        | Array<{
+            preferred_leagues: string[] | null
+            preferred_locations: string[] | null
+        }>
+        | null
+        | undefined,
+) => {
+    if (Array.isArray(playerPreference)) {
+        return playerPreference[0] ?? null
+    }
+
+    return playerPreference ?? null
+}
+
 const toApplicationRecord = (row: ApplicationRow): ApplicationRecord => ({
     id: row.id,
     status: row.status,
@@ -86,7 +224,25 @@ const toApplicationRecord = (row: ApplicationRow): ApplicationRecord => ({
     teamId: row.team_id,
     listingId: row.listing_id,
     teamName: pickTeam(row.team)?.name ?? 'Unknown Team',
+    teamLeague: pickTeam(row.team)?.league ?? '',
+    teamLocation: pickTeam(row.team)?.location ?? '',
     listingPosition: pickListing(row.listing)?.position ?? 'Unknown Position',
+    listingPreferredPositions: parsePreferenceValues(
+        pickListingPreference(pickListing(row.listing)?.listing_preference)?.preferred_positions,
+    ),
+    listingPreferredPlayerLeagues: parsePreferenceValues(
+        pickListingPreference(pickListing(row.listing)?.listing_preference)?.preferred_player_leagues,
+    ),
+    listingPreferredPlayerLocations: parsePreferenceValues(
+        pickListingPreference(pickListing(row.listing)?.listing_preference)?.preferred_player_locations,
+    ),
+    playerPosition: pickPlayer(row.player)?.position ?? '',
+    playerPreferredLeagues: parsePreferenceValues(
+        pickPlayerPreference(pickPlayer(row.player)?.player_preference)?.preferred_leagues,
+    ),
+    playerPreferredLocations: parsePreferenceValues(
+        pickPlayerPreference(pickPlayer(row.player)?.player_preference)?.preferred_locations,
+    ),
     createdAt: row.created_at,
 })
 
@@ -104,7 +260,7 @@ export const getApplicationsForCurrentUser = async (role: UserRole): Promise<App
     let query = supabase
         .from('application')
         .select(
-            'id, status, message, player_id, team_id, listing_id, created_at, team:team!inner(name, manager_id), listing:listing(position)',
+            'id, status, message, player_id, team_id, listing_id, created_at, team:team!inner(name, manager_id, league, location), listing:listing(position, listing_preference(preferred_positions, preferred_player_leagues, preferred_player_locations)), player:player(position, player_preference(preferred_leagues, preferred_locations))',
         )
         .order('created_at', { ascending: false })
 
