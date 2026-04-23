@@ -4,7 +4,7 @@ import { calculateMatchScore, splitPositionText, type MatchScoreBreakdown } from
 import SiteNavbar from '../components/SiteNavbar'
 import type { UserRole } from '../services/auth'
 import { getDistanceMiles } from '../services/distance'
-import { getListingPreferences, getCurrentPlayerPreference, getPlayerPreferencesByUserIds } from '../services/preference'
+import { getCurrentPlayerPreference, getPlayerPreferencesByUserIds, getTeamPreferences } from '../services/preference'
 import { getPlayersForMatching, type PlayerDirectoryRecord } from '../services/playerDirectory'
 import { getListingsForCurrentUser, type ListingRecord } from '../services/listing'
 import { getCurrentProfile } from '../services/profile'
@@ -75,8 +75,8 @@ const ForYouPage = () => {
                     return
                 }
 
-                const [listingPreferencesResult, playerPreferenceResult] = await Promise.all([
-                    getListingPreferences(listingsResult.listings.map((listing) => listing.id)),
+                const [teamPreferencesResult, playerPreferenceResult] = await Promise.all([
+                    getTeamPreferences(listingsResult.listings.map((listing) => listing.teamId)),
                     getCurrentPlayerPreference(),
                 ])
 
@@ -86,8 +86,8 @@ const ForYouPage = () => {
                     return
                 }
 
-                const preferenceLookup = listingPreferencesResult.ok
-                    ? listingPreferencesResult.preferencesByListingId ?? {}
+                const preferenceLookup = teamPreferencesResult.ok
+                    ? teamPreferencesResult.preferencesByTeamId ?? {}
                     : {}
 
                 const playerPositions = splitPositionText(result.profile.position)
@@ -96,14 +96,14 @@ const ForYouPage = () => {
 
                 const scoredCards = await Promise.all(
                     listingsResult.listings.map(async (listing) => {
-                        const listingPreference = preferenceLookup[listing.id]
+                        const listingPreference = preferenceLookup[listing.teamId]
 
                         const preferredPositions =
                             listingPreference?.preferredPositions.length
                                 ? listingPreference.preferredPositions
                                 : [listing.position]
 
-                        const preferredPlayerLeagues = listingPreference?.preferredPlayerLeagues ?? []
+                        const preferredPlayerLevels = listingPreference?.preferredPlayerLevels ?? []
 
                         const preferredPlayerLocations =
                             listingPreference?.preferredPlayerLocations.length
@@ -124,7 +124,7 @@ const ForYouPage = () => {
                                 },
                                 {
                                     preferredPositions,
-                                    preferredPlayerLeagues,
+                                    preferredPlayerLevels,
                                     preferredPlayerLocations,
                                     distanceMiles: distanceResult.distanceMiles,
                                 },
@@ -135,8 +135,8 @@ const ForYouPage = () => {
 
                 setScoredListings(scoredCards.sort((a, b) => b.scoreBreakdown.score - a.scoreBreakdown.score))
 
-                if (!listingPreferencesResult.ok && listingPreferencesResult.message) {
-                    setSignalsError(`Scored with fallback defaults: ${listingPreferencesResult.message}`)
+                if (!teamPreferencesResult.ok && teamPreferencesResult.message) {
+                    setSignalsError(`Scored with fallback defaults: ${teamPreferencesResult.message}`)
                 }
 
                 setIsLoadingSignals(false)
@@ -153,8 +153,8 @@ const ForYouPage = () => {
                 return
             }
 
-            const [listingPreferencesResult, playersResult] = await Promise.all([
-                getListingPreferences(managerListingsResult.listings.map((listing) => listing.id)),
+            const [teamPreferencesResult, playersResult] = await Promise.all([
+                getTeamPreferences(managerListingsResult.listings.map((listing) => listing.teamId)),
                 getPlayersForMatching(),
             ])
 
@@ -170,8 +170,8 @@ const ForYouPage = () => {
                 candidatePlayers.map((player) => player.userId),
             )
 
-            const listingPreferenceLookup = listingPreferencesResult.ok
-                ? listingPreferencesResult.preferencesByListingId ?? {}
+            const listingPreferenceLookup = teamPreferencesResult.ok
+                ? teamPreferencesResult.preferencesByTeamId ?? {}
                 : {}
 
             const playerPreferenceLookup = playerPreferenceLookupResult.ok
@@ -194,12 +194,12 @@ const ForYouPage = () => {
 
             const listingPlayerScores = await Promise.all(
                 managerListingsResult.listings.map(async (listing) => {
-                    const listingPreference = listingPreferenceLookup[listing.id]
+                    const listingPreference = listingPreferenceLookup[listing.teamId]
                     const preferredPositions =
                         listingPreference?.preferredPositions.length
                             ? listingPreference.preferredPositions
                             : [listing.position]
-                    const preferredPlayerLeagues = listingPreference?.preferredPlayerLeagues ?? []
+                    const preferredPlayerLevels = listingPreference?.preferredPlayerLevels ?? []
                     const preferredPlayerLocations =
                         listingPreference?.preferredPlayerLocations.length
                             ? listingPreference.preferredPlayerLocations
@@ -224,7 +224,7 @@ const ForYouPage = () => {
                                     },
                                     {
                                         preferredPositions,
-                                        preferredPlayerLeagues,
+                                        preferredPlayerLevels,
                                         preferredPlayerLocations,
                                         distanceMiles: distanceResult.distanceMiles,
                                     },
@@ -250,8 +250,8 @@ const ForYouPage = () => {
 
             const warningMessages: string[] = []
 
-            if (!listingPreferencesResult.ok && listingPreferencesResult.message) {
-                warningMessages.push(`listing preference fallback used: ${listingPreferencesResult.message}`)
+            if (!teamPreferencesResult.ok && teamPreferencesResult.message) {
+                warningMessages.push(`team preference fallback used: ${teamPreferencesResult.message}`)
             }
 
             if (!playerPreferenceLookupResult.ok && playerPreferenceLookupResult.message) {

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import SiteNavbar from '../components/SiteNavbar'
+import { levelOfPlayOptions } from '../lib/preferenceOptions'
+import { getCurrentPlayerPreference, upsertCurrentPlayerPreference } from '../services/preference'
 import { getCurrentProfile, updateProfileIdentity, upsertProfile, type CurrentProfile } from '../services/profile'
 
 type HeightUnit = 'metric' | 'imperial'
@@ -110,6 +112,8 @@ const ProfilePage = () => {
     const [fullNameInput, setFullNameInput] = useState('')
     const [bioInput, setBioInput] = useState('')
     const [videoUrlInput, setVideoUrlInput] = useState('')
+    const [preferredLevelInput, setPreferredLevelInput] = useState('')
+    const [preferredLocationInput, setPreferredLocationInput] = useState('')
 
     const navLinks = [
         { label: 'Teams', href: '/teams' },
@@ -162,6 +166,8 @@ const ProfilePage = () => {
                 setFullNameInput(demoProfile.fullName)
                 setBioInput(demoProfile.bio)
                 setVideoUrlInput(demoProfile.videoUrl)
+                setPreferredLevelInput('professional')
+                setPreferredLocationInput('Los Angeles, CA')
                 setIsLoading(false)
                 setLoadMessage(null)
                 return
@@ -181,6 +187,18 @@ const ProfilePage = () => {
             }
 
             const loadedProfile = result.profile
+            let preferredLevel = ''
+            let preferredLocation = ''
+
+            if (loadedProfile.role === 'player') {
+                const preferenceResult = await getCurrentPlayerPreference()
+
+                if (preferenceResult.ok) {
+                    preferredLevel = preferenceResult.preference?.preferredLeagues[0] ?? ''
+                    preferredLocation = preferenceResult.preference?.preferredLocations[0] ?? ''
+                }
+            }
+
             setProfile(loadedProfile)
             setBirthdayInput(loadedProfile.birthday)
             setSelectedPositions(splitPositions(loadedProfile.position))
@@ -191,6 +209,8 @@ const ProfilePage = () => {
             setFullNameInput(loadedProfile.fullName)
             setBioInput(loadedProfile.bio)
             setVideoUrlInput(loadedProfile.videoUrl)
+            setPreferredLevelInput(preferredLevel)
+            setPreferredLocationInput(preferredLocation)
             setIsLoading(false)
         }
 
@@ -398,6 +418,20 @@ const ProfilePage = () => {
             setStatusMessage(result.message ?? 'Unable to save profile updates. Please try again.')
             setIsSaving(false)
             return
+        }
+
+        if (isPlayer) {
+            const preferenceResult = await upsertCurrentPlayerPreference({
+                preferredLeagues: preferredLevelInput ? [preferredLevelInput] : [],
+                preferredLocations: preferredLocationInput ? [preferredLocationInput] : [],
+            })
+
+            if (!preferenceResult.ok) {
+                setStatusType('error')
+                setStatusMessage(preferenceResult.message ?? 'Profile saved, but we could not save your preferences.')
+                setIsSaving(false)
+                return
+            }
         }
 
         setProfile((previousProfile) => {
@@ -687,6 +721,29 @@ const ProfilePage = () => {
                                                 <p className={`auth-helper-text ${heightValidation.type === 'error' ? 'error' : ''}`}>
                                                     {heightValidation.message}
                                                 </p>
+
+                                                <label htmlFor="preferredLevel">Preferred level of play</label>
+                                                <select
+                                                    id="preferredLevel"
+                                                    value={preferredLevelInput}
+                                                    onChange={(event) => setPreferredLevelInput(event.target.value)}
+                                                >
+                                                    <option value="">Select a level</option>
+                                                    {levelOfPlayOptions.map((levelOption) => (
+                                                        <option key={levelOption.value} value={levelOption.value}>
+                                                            {levelOption.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+
+                                                <label htmlFor="preferredLocation">Preferred location</label>
+                                                <input
+                                                    id="preferredLocation"
+                                                    type="text"
+                                                    value={preferredLocationInput}
+                                                    onChange={(event) => setPreferredLocationInput(event.target.value)}
+                                                    placeholder="City, State or country"
+                                                />
                                             </>
                                         ) : (
                                             <p className="auth-helper-text">

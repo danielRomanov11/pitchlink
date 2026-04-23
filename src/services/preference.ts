@@ -3,10 +3,10 @@ import { getCurrentUser } from './auth'
 
 const missingConfigMessage = 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
 
-export type ListingPreferenceRecord = {
-    listingId: string
+export type TeamPreferenceRecord = {
+    teamId: string
     preferredPositions: string[]
-    preferredPlayerLeagues: string[]
+    preferredPlayerLevels: string[]
     preferredPlayerLocations: string[]
 }
 
@@ -26,10 +26,10 @@ type UpsertPlayerPreferenceResult = {
     message?: string
 }
 
-type ListingPreferenceResult = {
+type TeamPreferenceResult = {
     ok: boolean
     message?: string
-    preferencesByListingId?: Record<string, ListingPreferenceRecord>
+    preferencesByTeamId?: Record<string, TeamPreferenceRecord>
 }
 
 type PlayerPreferenceResult = {
@@ -44,10 +44,10 @@ type PlayerPreferenceLookupResult = {
     preferencesByUserId?: Record<string, PlayerPreferenceRecord>
 }
 
-type ListingPreferenceRow = {
-    listing_id: string
+type TeamPreferenceRow = {
+    team_id: string
     preferred_positions: string[] | null
-    preferred_player_leagues: string[] | null
+    preferred_player_levels: string[] | null
     preferred_player_locations: string[] | null
 }
 
@@ -60,10 +60,10 @@ type PlayerPreferenceRow = {
 const normalizeStringArray = (values: string[] | null | undefined) =>
     (values ?? []).map((value) => value.trim()).filter((value) => value.length > 0)
 
-const mapListingPreferenceRow = (row: ListingPreferenceRow): ListingPreferenceRecord => ({
-    listingId: row.listing_id,
+const mapTeamPreferenceRow = (row: TeamPreferenceRow): TeamPreferenceRecord => ({
+    teamId: row.team_id,
     preferredPositions: normalizeStringArray(row.preferred_positions),
-    preferredPlayerLeagues: normalizeStringArray(row.preferred_player_leagues),
+    preferredPlayerLevels: normalizeStringArray(row.preferred_player_levels),
     preferredPlayerLocations: normalizeStringArray(row.preferred_player_locations),
 })
 
@@ -73,42 +73,92 @@ const mapPlayerPreferenceRow = (row: PlayerPreferenceRow): PlayerPreferenceRecor
     preferredLocations: normalizeStringArray(row.preferred_locations),
 })
 
-export const getListingPreferences = async (listingIds: string[]): Promise<ListingPreferenceResult> => {
+export const getTeamPreferences = async (teamIds: string[]): Promise<TeamPreferenceResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
 
-    if (listingIds.length === 0) {
-        return { ok: true, preferencesByListingId: {} }
+    if (teamIds.length === 0) {
+        return { ok: true, preferencesByTeamId: {} }
     }
 
-    const normalizedListingIds = listingIds.map((listingId) => listingId.trim()).filter((listingId) => listingId.length > 0)
+    const normalizedTeamIds = teamIds.map((teamId) => teamId.trim()).filter((teamId) => teamId.length > 0)
 
-    if (normalizedListingIds.length === 0) {
-        return { ok: true, preferencesByListingId: {} }
+    if (normalizedTeamIds.length === 0) {
+        return { ok: true, preferencesByTeamId: {} }
     }
 
     const { data, error } = await supabase
-        .from('listing_preference')
-        .select('listing_id, preferred_positions, preferred_player_leagues, preferred_player_locations')
-        .in('listing_id', normalizedListingIds)
+        .from('team_preference')
+        .select('team_id, preferred_positions, preferred_player_levels, preferred_player_locations')
+        .in('team_id', normalizedTeamIds)
 
     if (error) {
         return { ok: false, message: error.message }
     }
 
-    const preferenceRows = (data ?? []) as ListingPreferenceRow[]
+    const preferenceRows = (data ?? []) as TeamPreferenceRow[]
 
-    const preferencesByListingId = preferenceRows.reduce<Record<string, ListingPreferenceRecord>>((accumulator, row) => {
-        const mappedPreference = mapListingPreferenceRow(row)
-        accumulator[mappedPreference.listingId] = mappedPreference
+    const preferencesByTeamId = preferenceRows.reduce<Record<string, TeamPreferenceRecord>>((accumulator, row) => {
+        const mappedPreference = mapTeamPreferenceRow(row)
+        accumulator[mappedPreference.teamId] = mappedPreference
         return accumulator
     }, {})
 
     return {
         ok: true,
-        preferencesByListingId,
+        preferencesByTeamId,
     }
+}
+
+type UpsertTeamPreferencePayload = {
+    preferredPositions: string[]
+    preferredPlayerLevels: string[]
+    preferredPlayerLocations: string[]
+}
+
+type UpsertTeamPreferenceResult = {
+    ok: boolean
+    message?: string
+}
+
+export const upsertTeamPreference = async (
+    teamId: string,
+    { preferredPositions, preferredPlayerLevels, preferredPlayerLocations }: UpsertTeamPreferencePayload,
+): Promise<UpsertTeamPreferenceResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const user = await getCurrentUser()
+
+    if (!user) {
+        return { ok: false, message: 'No active session. Sign in to continue.' }
+    }
+
+    const normalizedTeamId = teamId.trim()
+
+    if (!normalizedTeamId) {
+        return { ok: false, message: 'A team id is required.' }
+    }
+
+    const { error } = await supabase.from('team_preference').upsert(
+        {
+            team_id: normalizedTeamId,
+            preferred_positions: normalizeStringArray(preferredPositions),
+            preferred_player_levels: normalizeStringArray(preferredPlayerLevels),
+            preferred_player_locations: normalizeStringArray(preferredPlayerLocations),
+        },
+        {
+            onConflict: 'team_id',
+        },
+    )
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    return { ok: true }
 }
 
 export const getCurrentPlayerPreference = async (): Promise<PlayerPreferenceResult> => {

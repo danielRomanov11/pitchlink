@@ -10,6 +10,7 @@ This folder now contains destructive reset + relational schema migrations.
 4. `migrations/202604220001_create_preference_tables.sql`
 5. `migrations/202604220002_add_location_coordinate_cache.sql`
 6. `migrations/202604220003_expand_player_preference_select_for_matching.sql`
+7. `migrations/202604230001_create_team_preference_table.sql`
 
 ## What The Reset Does
 
@@ -26,6 +27,7 @@ Run in order:
 4. `202604220001_create_preference_tables.sql`
 5. `202604220002_add_location_coordinate_cache.sql`
 6. `202604220003_expand_player_preference_select_for_matching.sql`
+7. `202604230001_create_team_preference_table.sql`
 
 ## Apply With Supabase CLI
 

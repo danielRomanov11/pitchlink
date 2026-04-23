@@ -13,7 +13,7 @@ export type MatchPlayer = {
 
 export type MatchListing = {
     preferredPositions: string[]
-    preferredPlayerLeagues: string[]
+    preferredPlayerLevels: string[]
     preferredPlayerLocations: string[]
     distanceMiles?: number | null
 }
@@ -242,7 +242,7 @@ export const calculateLocationScore = (distanceMiles: number | null | undefined,
 
 export const calculateMatchScore = (player: MatchPlayer, listing: MatchListing): MatchScoreBreakdown => {
     const positionScore = calculatePositionScore(player.positions, listing.preferredPositions)
-    const levelOfPlayScore = calculateLeagueScore(player.levelOfPlay, listing.preferredPlayerLeagues)
+    const levelOfPlayScore = calculateLeagueScore(player.levelOfPlay, listing.preferredPlayerLevels)
     const locationScore = calculateLocationScore(listing.distanceMiles, listing.preferredPlayerLocations.length > 0)
 
     const weightedPositionScore = positionScore * POSITION_WEIGHT

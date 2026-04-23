@@ -10,7 +10,7 @@ import {
     type ApplicationStatus,
 } from '../services/application'
 import type { UserRole } from '../services/auth'
-import { getListingPreferences, getPlayerPreferencesByUserIds } from '../services/preference'
+import { getPlayerPreferencesByUserIds, getTeamPreferences } from '../services/preference'
 import { getCurrentProfile } from '../services/profile'
 import { getPlayersByUserIds } from '../services/playerDirectory'
 
@@ -68,14 +68,14 @@ const ApplicationsPage = () => {
             setApplicationMatchSignals({})
 
             if (currentRole === 'manager') {
-                const [listingPreferencesResult, playerPreferencesResult, playersResult] = await Promise.all([
-                    getListingPreferences(currentApplications.map((application) => application.listingId)),
+                const [teamPreferencesResult, playerPreferencesResult, playersResult] = await Promise.all([
+                    getTeamPreferences(currentApplications.map((application) => application.teamId)),
                     getPlayerPreferencesByUserIds(currentApplications.map((application) => application.playerId)),
                     getPlayersByUserIds(currentApplications.map((application) => application.playerId)),
                 ])
 
-                const listingPreferenceLookup = listingPreferencesResult.ok
-                    ? listingPreferencesResult.preferencesByListingId ?? {}
+                const listingPreferenceLookup = teamPreferencesResult.ok
+                    ? teamPreferencesResult.preferencesByTeamId ?? {}
                     : {}
                 const playerPreferenceLookup = playerPreferencesResult.ok
                     ? playerPreferencesResult.preferencesByUserId ?? {}
@@ -84,7 +84,7 @@ const ApplicationsPage = () => {
 
                 const applicationScores = await Promise.all(
                     currentApplications.map(async (application) => {
-                        const listingPreference = listingPreferenceLookup[application.listingId]
+                        const listingPreference = listingPreferenceLookup[application.teamId]
                         const playerPreference = playerPreferenceLookup[application.playerId]
                         const playerDirectory = playerDirectoryLookup[application.playerId]
 
@@ -97,7 +97,7 @@ const ApplicationsPage = () => {
                                 ? listingPreference.preferredPositions
                                 : [application.listingPosition]
 
-                        const preferredPlayerLeagues = listingPreference?.preferredPlayerLeagues ?? []
+                        const preferredPlayerLevels = listingPreference?.preferredPlayerLevels ?? []
 
                         const preferredPlayerLocations =
                             listingPreference?.preferredPlayerLocations.length
@@ -119,7 +119,7 @@ const ApplicationsPage = () => {
                                 },
                                 {
                                     preferredPositions,
-                                    preferredPlayerLeagues,
+                                    preferredPlayerLevels,
                                     preferredPlayerLocations,
                                     distanceMiles: distanceResult.distanceMiles,
                                 },

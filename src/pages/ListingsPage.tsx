@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import MatchScoreBar from '../components/MatchScoreBar'
 import { calculateMatchScore, splitPositionText, type MatchScoreBreakdown } from '../lib/matchScore'
+import { levelOfPlayOptions } from '../lib/preferenceOptions'
 import SiteNavbar from '../components/SiteNavbar'
 import { getDistanceMiles } from '../services/distance'
-import { getCurrentPlayerPreference, getListingPreferences } from '../services/preference'
+import {
+    getCurrentPlayerPreference,
+    getTeamPreferences,
+    upsertTeamPreference,
+    type TeamPreferenceRecord,
+} from '../services/preference'
 import {
     createApplication,
     getApplicationsForCurrentUser,
@@ -41,6 +47,12 @@ type ListingMatchSignal = {
     matchedLocation: string | null
 }
 
+const parseLocationsInput = (value: string) =>
+    value
+        .split(',')
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)
+
 const ListingsPage = () => {
     const [role, setRole] = useState<UserRole | null>(null)
     const [teams, setTeams] = useState<TeamRecord[]>([])
@@ -48,10 +60,17 @@ const ListingsPage = () => {
     const [listingMatchSignals, setListingMatchSignals] = useState<Record<string, ListingMatchSignal>>({})
     const [applicationMessages, setApplicationMessages] = useState<Record<string, string>>({})
     const [applicationStatuses, setApplicationStatuses] = useState<Record<string, ApplicationStatus>>({})
+    const [teamPreferencesByTeamId, setTeamPreferencesByTeamId] = useState<Record<string, TeamPreferenceRecord>>({})
     const [isLoading, setIsLoading] = useState(true)
     const [isCreatingListing, setIsCreatingListing] = useState(false)
+    const [isSavingTeamPreference, setIsSavingTeamPreference] = useState(false)
     const [activeApplyListingId, setActiveApplyListingId] = useState<string | null>(null)
     const [activeListingStatusId, setActiveListingStatusId] = useState<string | null>(null)
+    const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
+    const [editingTeamName, setEditingTeamName] = useState('')
+    const [editingPreferredPositions, setEditingPreferredPositions] = useState<string[]>([])
+    const [editingPreferredLevel, setEditingPreferredLevel] = useState('')
+    const [editingPreferredLocationsInput, setEditingPreferredLocationsInput] = useState('')
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
 
@@ -93,16 +112,22 @@ const ListingsPage = () => {
             }
 
             const availableListings = listingResult.listings ?? []
+            const uniqueTeamIds = [...new Set(availableListings.map((listing) => listing.teamId))]
+
+            const teamPreferencesResult = await getTeamPreferences(uniqueTeamIds)
+            const teamPreferenceLookup = teamPreferencesResult.ok
+                ? teamPreferencesResult.preferencesByTeamId ?? {}
+                : {}
 
             setListings(availableListings)
             setListingMatchSignals({})
             setApplicationMessages({})
             setApplicationStatuses({})
+            setTeamPreferencesByTeamId(teamPreferenceLookup)
 
             if (currentRole === 'player') {
-                const [applicationResult, listingPreferencesResult, playerPreferenceResult] = await Promise.all([
+                const [applicationResult, playerPreferenceResult] = await Promise.all([
                     getApplicationsForCurrentUser('player'),
-                    getListingPreferences(availableListings.map((listing) => listing.id)),
                     getCurrentPlayerPreference(),
                 ])
 
@@ -123,10 +148,6 @@ const ListingsPage = () => {
 
                 setApplicationStatuses(statusesByListing)
 
-                const listingPreferenceLookup = listingPreferencesResult.ok
-                    ? listingPreferencesResult.preferencesByListingId ?? {}
-                    : {}
-
                 const playerPositions = splitPositionText(profileResult.profile.position)
                 const playerLevel = playerPreferenceResult.ok
                     ? playerPreferenceResult.preference?.preferredLeagues[0] ?? null
@@ -137,18 +158,18 @@ const ListingsPage = () => {
 
                 const listingScores = await Promise.all(
                     availableListings.map(async (listing) => {
-                        const listingPreference = listingPreferenceLookup[listing.id]
+                        const teamPreference = teamPreferenceLookup[listing.teamId]
 
                         const preferredPositions =
-                            listingPreference?.preferredPositions.length
-                                ? listingPreference.preferredPositions
+                            teamPreference?.preferredPositions.length
+                                ? teamPreference.preferredPositions
                                 : [listing.position]
 
-                        const preferredPlayerLeagues = listingPreference?.preferredPlayerLeagues ?? []
+                        const preferredPlayerLevels = teamPreference?.preferredPlayerLevels ?? []
 
                         const preferredPlayerLocations =
-                            listingPreference?.preferredPlayerLocations.length
-                                ? listingPreference.preferredPlayerLocations
+                            teamPreference?.preferredPlayerLocations.length
+                                ? teamPreference.preferredPlayerLocations
                                 : listing.teamLocation.trim()
                                     ? [listing.teamLocation]
                                     : []
@@ -165,7 +186,7 @@ const ListingsPage = () => {
                                 },
                                 {
                                     preferredPositions,
-                                    preferredPlayerLeagues,
+                                    preferredPlayerLevels,
                                     preferredPlayerLocations,
                                     distanceMiles: distanceResult.distanceMiles,
                                 },
@@ -322,6 +343,63 @@ const ListingsPage = () => {
         setStatusMessage('Listing status updated.')
     }
 
+    const handleOpenTeamPreferenceEditor = (listing: ListingRecord) => {
+        const existingPreference = teamPreferencesByTeamId[listing.teamId]
+
+        setEditingTeamId(listing.teamId)
+        setEditingTeamName(listing.teamName)
+        setEditingPreferredPositions(
+            existingPreference?.preferredPositions.length
+                ? existingPreference.preferredPositions
+                : [listing.position],
+        )
+        setEditingPreferredLevel(existingPreference?.preferredPlayerLevels[0] ?? '')
+        setEditingPreferredLocationsInput(
+            existingPreference?.preferredPlayerLocations.length
+                ? existingPreference.preferredPlayerLocations.join(', ')
+                : listing.teamLocation,
+        )
+    }
+
+    const handleSaveTeamPreference = async () => {
+        if (!editingTeamId || role !== 'manager') {
+            return
+        }
+
+        setStatusMessage(null)
+        setStatusType(null)
+        setIsSavingTeamPreference(true)
+
+        const result = await upsertTeamPreference(editingTeamId, {
+            preferredPositions: editingPreferredPositions,
+            preferredPlayerLevels: editingPreferredLevel ? [editingPreferredLevel] : [],
+            preferredPlayerLocations: parseLocationsInput(editingPreferredLocationsInput),
+        })
+
+        setIsSavingTeamPreference(false)
+
+        if (!result.ok) {
+            setStatusType('error')
+            setStatusMessage(result.message ?? 'Unable to save team preferences.')
+            return
+        }
+
+        setTeamPreferencesByTeamId((previous) => ({
+            ...previous,
+            [editingTeamId]: {
+                teamId: editingTeamId,
+                preferredPositions: editingPreferredPositions,
+                preferredPlayerLevels: editingPreferredLevel ? [editingPreferredLevel] : [],
+                preferredPlayerLocations: parseLocationsInput(editingPreferredLocationsInput),
+            },
+        }))
+
+        setEditingTeamId(null)
+        setEditingTeamName('')
+        setStatusType('success')
+        setStatusMessage('Team preferences saved. Match scores now use the updated preferences.')
+    }
+
     return (
         <main className="app-page listings-page">
             <section className="app-hero listings-page-hero">
@@ -405,24 +483,33 @@ const ListingsPage = () => {
                                     )}
 
                                     {role === 'manager' && (
-                                        <div className="role-switcher" role="group" aria-label="Edit listing status">
+                                        <>
                                             <button
-                                                className={`secondary-button role-switcher-button ${listing.status === 'open' ? 'active' : ''}`}
+                                                className="secondary-button"
                                                 type="button"
-                                                onClick={() => void handleUpdateListingStatus(listing, 'open')}
-                                                disabled={activeListingStatusId === listing.id}
+                                                onClick={() => handleOpenTeamPreferenceEditor(listing)}
                                             >
-                                                Open
+                                                Edit team preferences
                                             </button>
-                                            <button
-                                                className={`secondary-button role-switcher-button ${listing.status === 'closed' ? 'active' : ''}`}
-                                                type="button"
-                                                onClick={() => void handleUpdateListingStatus(listing, 'closed')}
-                                                disabled={activeListingStatusId === listing.id}
-                                            >
-                                                Closed
-                                            </button>
-                                        </div>
+                                            <div className="role-switcher" role="group" aria-label="Edit listing status">
+                                                <button
+                                                    className={`secondary-button role-switcher-button ${listing.status === 'open' ? 'active' : ''}`}
+                                                    type="button"
+                                                    onClick={() => void handleUpdateListingStatus(listing, 'open')}
+                                                    disabled={activeListingStatusId === listing.id}
+                                                >
+                                                    Open
+                                                </button>
+                                                <button
+                                                    className={`secondary-button role-switcher-button ${listing.status === 'closed' ? 'active' : ''}`}
+                                                    type="button"
+                                                    onClick={() => void handleUpdateListingStatus(listing, 'closed')}
+                                                    disabled={activeListingStatusId === listing.id}
+                                                >
+                                                    Closed
+                                                </button>
+                                            </div>
+                                        </>
                                     )}
                                 </article>
                             ))}
@@ -475,6 +562,75 @@ const ListingsPage = () => {
                     </article>
                 </div>
             </section>
+
+            {role === 'manager' && editingTeamId && (
+                <section className="app-section" aria-label="Edit team preferences">
+                    <article className="app-card">
+                        <p className="card-kicker">Team Preferences</p>
+                        <h3>{editingTeamName}</h3>
+
+                        <label htmlFor="preferred-positions">Preferred positions</label>
+                        <select
+                            id="preferred-positions"
+                            multiple
+                            value={editingPreferredPositions}
+                            onChange={(event) => {
+                                const selectedValues = Array.from(event.target.selectedOptions).map((option) => option.value)
+                                setEditingPreferredPositions(selectedValues)
+                            }}
+                        >
+                            {listingPositionOptions.map((positionOption) => (
+                                <option key={positionOption} value={positionOption}>
+                                    {positionOption}
+                                </option>
+                            ))}
+                        </select>
+
+                        <label htmlFor="preferred-level">Preferred level of play</label>
+                        <select
+                            id="preferred-level"
+                            value={editingPreferredLevel}
+                            onChange={(event) => setEditingPreferredLevel(event.target.value)}
+                        >
+                            <option value="">Select a level</option>
+                            {levelOfPlayOptions.map((levelOption) => (
+                                <option key={levelOption.value} value={levelOption.value}>
+                                    {levelOption.label}
+                                </option>
+                            ))}
+                        </select>
+
+                        <label htmlFor="preferred-locations">Preferred locations</label>
+                        <input
+                            id="preferred-locations"
+                            type="text"
+                            value={editingPreferredLocationsInput}
+                            onChange={(event) => setEditingPreferredLocationsInput(event.target.value)}
+                            placeholder="City, State, Country"
+                        />
+                        <p className="auth-helper-text">Use commas to add multiple preferred locations.</p>
+
+                        <div className="role-switcher" role="group" aria-label="Team preference actions">
+                            <button
+                                className="secondary-button role-switcher-button"
+                                type="button"
+                                onClick={() => void handleSaveTeamPreference()}
+                                disabled={isSavingTeamPreference}
+                            >
+                                {isSavingTeamPreference ? 'Saving...' : 'Save preferences'}
+                            </button>
+                            <button
+                                className="secondary-button role-switcher-button"
+                                type="button"
+                                onClick={() => setEditingTeamId(null)}
+                                disabled={isSavingTeamPreference}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </article>
+                </section>
+            )}
 
             {statusMessage && (
                 <section className="app-section" aria-label="Listings status">

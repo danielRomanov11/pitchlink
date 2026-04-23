@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
+import { levelOfPlayOptions } from '../lib/preferenceOptions'
 import type { UserRole } from '../services/auth'
 import { upsertProfile } from '../services/profile'
 import { upsertCurrentPlayerPreference } from '../services/preference'
@@ -25,8 +26,6 @@ const positionOptions = [
     'Right Winger',
     'Striker',
 ]
-
-const preferredLeagueOptions = ['Professional', 'Semi-Pro', 'College', 'Amateur', 'Club', 'High School']
 
 const parseRole = (value: string | null | undefined): UserRole | null => {
     if (value === 'player' || value === 'manager') {
@@ -93,7 +92,7 @@ const CompleteProfilePage = () => {
 
     const [selectedRole] = useState<UserRole>(roleFromQuery ?? roleFromState ?? 'player')
     const [selectedPositions, setSelectedPositions] = useState<string[]>([''])
-    const [preferredLeague, setPreferredLeague] = useState('')
+    const [preferredLevel, setPreferredLevel] = useState('')
     const [preferredLocation, setPreferredLocation] = useState('')
     const [heightUnit, setHeightUnit] = useState<HeightUnit>('metric')
     const [heightMetricInput, setHeightMetricInput] = useState('')
@@ -256,7 +255,7 @@ const CompleteProfilePage = () => {
 
             if (selectedRole === 'player') {
                 const preferenceResult = await upsertCurrentPlayerPreference({
-                    preferredLeagues: preferredLeague ? [preferredLeague] : [],
+                    preferredLeagues: preferredLevel ? [preferredLevel] : [],
                     preferredLocations: [preferredLocation],
                 })
 
@@ -345,17 +344,17 @@ const CompleteProfilePage = () => {
                             </button>
                         )}
 
-                        <label htmlFor="preferredLeague">Preferred level</label>
+                        <label htmlFor="preferredLevel">Preferred level of play</label>
                         <select
-                            id="preferredLeague"
-                            name="preferredLeague"
-                            value={preferredLeague}
-                            onChange={(event) => setPreferredLeague(event.target.value)}
+                            id="preferredLevel"
+                            name="preferredLevel"
+                            value={preferredLevel}
+                            onChange={(event) => setPreferredLevel(event.target.value)}
                         >
                             <option value="">Select a level</option>
-                            {preferredLeagueOptions.map((leagueOption) => (
-                                <option key={leagueOption} value={leagueOption}>
-                                    {leagueOption}
+                            {levelOfPlayOptions.map((levelOption) => (
+                                <option key={levelOption.value} value={levelOption.value}>
+                                    {levelOption.label}
                                 </option>
                             ))}
                         </select>
