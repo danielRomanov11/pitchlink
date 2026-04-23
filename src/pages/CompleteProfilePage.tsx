@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import type { UserRole } from '../services/auth'
 import { upsertProfile } from '../services/profile'
+import { upsertCurrentPlayerPreference } from '../services/preference'
 
 type HeightUnit = 'metric' | 'imperial'
 
@@ -24,6 +25,8 @@ const positionOptions = [
     'Right Winger',
     'Striker',
 ]
+
+const preferredLeagueOptions = ['Professional', 'Semi-Pro', 'College', 'Amateur', 'Club', 'High School']
 
 const parseRole = (value: string | null | undefined): UserRole | null => {
     if (value === 'player' || value === 'manager') {
@@ -90,6 +93,8 @@ const CompleteProfilePage = () => {
 
     const [selectedRole] = useState<UserRole>(roleFromQuery ?? roleFromState ?? 'player')
     const [selectedPositions, setSelectedPositions] = useState<string[]>([''])
+    const [preferredLeague, setPreferredLeague] = useState('')
+    const [preferredLocation, setPreferredLocation] = useState('')
     const [heightUnit, setHeightUnit] = useState<HeightUnit>('metric')
     const [heightMetricInput, setHeightMetricInput] = useState('')
     const [heightFeetInput, setHeightFeetInput] = useState('')
@@ -249,6 +254,19 @@ const CompleteProfilePage = () => {
                 return
             }
 
+            if (selectedRole === 'player') {
+                const preferenceResult = await upsertCurrentPlayerPreference({
+                    preferredLeagues: preferredLeague ? [preferredLeague] : [],
+                    preferredLocations: [preferredLocation],
+                })
+
+                if (!preferenceResult.ok) {
+                    setStatusType('error')
+                    setStatusMessage(preferenceResult.message ?? 'Unable to save your preferences. Try again.')
+                    return
+                }
+            }
+
             setStatusType('success')
             setStatusMessage('Profile saved. Redirecting...')
             setTimeout(() => {
@@ -326,6 +344,31 @@ const CompleteProfilePage = () => {
                                 Add another position
                             </button>
                         )}
+
+                        <label htmlFor="preferredLeague">Preferred level</label>
+                        <select
+                            id="preferredLeague"
+                            name="preferredLeague"
+                            value={preferredLeague}
+                            onChange={(event) => setPreferredLeague(event.target.value)}
+                        >
+                            <option value="">Select a level</option>
+                            {preferredLeagueOptions.map((leagueOption) => (
+                                <option key={leagueOption} value={leagueOption}>
+                                    {leagueOption}
+                                </option>
+                            ))}
+                        </select>
+
+                        <label htmlFor="preferredLocation">Preferred location</label>
+                        <input
+                            id="preferredLocation"
+                            name="preferredLocation"
+                            type="text"
+                            placeholder="City, state, or region"
+                            value={preferredLocation}
+                            onChange={(event) => setPreferredLocation(event.target.value)}
+                        />
 
                         <label htmlFor="height">Height</label>
                         <div className="height-unit-toggle" role="group" aria-label="Height unit">

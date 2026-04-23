@@ -491,14 +491,7 @@ const ProfilePage = () => {
                             </div>
 
                             <div className="profile-action-buttons" aria-label="Profile actions">
-                                <button className="profile-action-button" type="button" aria-label="Share profile" disabled>
-                                    <svg className="profile-action-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path
-                                            d="M16 6a3 3 0 1 0-2.83-4H13a3 3 0 0 0 .17 1l-6.2 3.1A3 3 0 0 0 4 5a3 3 0 1 0 2.97 3.4l6.2 3.1A3 3 0 1 0 14 10a3 3 0 0 0-.83.12l-6.2-3.1A3 3 0 0 0 7 7a3 3 0 0 0-.03-.4l6.2-3.1A3 3 0 0 0 16 6Zm0 8a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM4 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm0 10a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"
-                                            fill="currentColor"
-                                        />
-                                    </svg>
-                                </button>
+
 
                                 <button
                                     className="profile-action-button"
@@ -514,14 +507,7 @@ const ProfilePage = () => {
                                     </svg>
                                 </button>
 
-                                <button className="profile-action-button" type="button" aria-label="Profile settings" disabled>
-                                    <svg className="profile-action-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path
-                                            d="M10.2 2h3.6l.44 2.18a7.9 7.9 0 0 1 1.63.68l1.88-1.18 2.55 2.55-1.18 1.88c.28.52.5 1.06.68 1.63L22 10.2v3.6l-2.18.44a7.9 7.9 0 0 1-.68 1.63l1.18 1.88-2.55 2.55-1.88-1.18c-.52.28-1.06.5-1.63.68L13.8 22h-3.6l-.44-2.18a7.9 7.9 0 0 1-1.63-.68l-1.88 1.18-2.55-2.55 1.18-1.88a7.9 7.9 0 0 1-.68-1.63L2 13.8v-3.6l2.18-.44c.18-.57.4-1.11.68-1.63L3.68 6.25 6.23 3.7l1.88 1.18c.52-.28 1.06-.5 1.63-.68L10.2 2Zm1.8 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"
-                                            fill="currentColor"
-                                        />
-                                    </svg>
-                                </button>
+
                             </div>
                         </article>
 

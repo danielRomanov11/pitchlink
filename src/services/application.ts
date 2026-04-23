@@ -7,6 +7,7 @@ export type ApplicationRecord = {
     id: string
     status: ApplicationStatus
     message: string
+    playerName: string
     playerId: string
     teamId: string
     listingId: string
@@ -62,6 +63,11 @@ type ApplicationRow = {
     | null
 }
 
+type AppUserRow = {
+    id: string
+    name: string
+}
+
 const pickTeam = (team: ApplicationRow['team']) => {
     if (Array.isArray(team)) {
         return team[0] ?? null
@@ -82,6 +88,7 @@ const toApplicationRecord = (row: ApplicationRow): ApplicationRecord => ({
     id: row.id,
     status: row.status,
     message: row.message ?? '',
+    playerName: 'Player',
     playerId: row.player_id,
     teamId: row.team_id,
     listingId: row.listing_id,
@@ -89,6 +96,29 @@ const toApplicationRecord = (row: ApplicationRow): ApplicationRecord => ({
     listingPosition: pickListing(row.listing)?.position ?? 'Unknown Position',
     createdAt: row.created_at,
 })
+
+const getPlayerNamesByUserIds = async (userIds: string[]) => {
+    if (!isSupabaseConfigured || !supabase || userIds.length === 0) {
+        return new Map<string, string>()
+    }
+
+    const normalizedUserIds = userIds.map((userId) => userId.trim()).filter((userId) => userId.length > 0)
+
+    if (normalizedUserIds.length === 0) {
+        return new Map<string, string>()
+    }
+
+    const { data, error } = await supabase
+        .from('app_user')
+        .select('id, name')
+        .in('id', normalizedUserIds)
+
+    if (error) {
+        return new Map<string, string>()
+    }
+
+    return new Map(((data ?? []) as AppUserRow[]).map((row) => [row.id, row.name]))
+}
 
 export const getApplicationsForCurrentUser = async (role: UserRole): Promise<ApplicationListResult> => {
     if (!isSupabaseConfigured || !supabase) {
@@ -120,9 +150,15 @@ export const getApplicationsForCurrentUser = async (role: UserRole): Promise<App
         return { ok: false, message: error.message }
     }
 
+    const rows = (data ?? []) as unknown as ApplicationRow[]
+    const playerNames = await getPlayerNamesByUserIds(rows.map((row) => row.player_id))
+
     return {
         ok: true,
-        applications: ((data ?? []) as unknown as ApplicationRow[]).map(toApplicationRecord),
+        applications: rows.map((row) => ({
+            ...toApplicationRecord(row),
+            playerName: playerNames.get(row.player_id) ?? 'Player',
+        })),
     }
 }
 

@@ -210,6 +210,17 @@ export const updateListingStatus = async (listingId: string, status: ListingStat
         return { ok: false, message: error.message }
     }
 
+    // If closing the listing, delete all applications for this listing
+    if (status === 'closed') {
+        const { error: deleteError } = await supabase
+            .from('application')
+            .delete()
+            .eq('listing_id', normalizedListingId)
+        if (deleteError) {
+            return { ok: false, message: `Listing closed, but failed to delete applications: ${deleteError.message}` }
+        }
+    }
+
     const listingRow = data as unknown as ListingRow
     const applicantCounts = await getApplicantCounts([listingRow.id])
 
