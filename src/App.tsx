@@ -31,7 +31,9 @@ function App() {
             <Route path="/teams/:teamId" element={<TeamProfilePage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/listings" element={<ListingsPage />} />
-            <Route path="/for-you" element={<ForYouPage />} />
+            <Route element={<ProtectedRoute allowedRoles={['player']} />}>
+              <Route path="/for-you" element={<ForYouPage />} />
+            </Route>
             <Route path="/applications" element={<ApplicationsPage />} />
           </Route>
 

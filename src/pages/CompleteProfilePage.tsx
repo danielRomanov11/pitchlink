@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
+import { levelOfPlayOptions } from '../lib/preferenceOptions'
 import type { UserRole } from '../services/auth'
 import { upsertProfile } from '../services/profile'
+import { upsertCurrentPlayerPreference } from '../services/preference'
 
 type HeightUnit = 'metric' | 'imperial'
 
@@ -90,6 +92,8 @@ const CompleteProfilePage = () => {
 
     const [selectedRole] = useState<UserRole>(roleFromQuery ?? roleFromState ?? 'player')
     const [selectedPositions, setSelectedPositions] = useState<string[]>([''])
+    const [preferredLevel, setPreferredLevel] = useState('')
+    const [preferredLocation, setPreferredLocation] = useState('')
     const [heightUnit, setHeightUnit] = useState<HeightUnit>('metric')
     const [heightMetricInput, setHeightMetricInput] = useState('')
     const [heightFeetInput, setHeightFeetInput] = useState('')
@@ -249,6 +253,19 @@ const CompleteProfilePage = () => {
                 return
             }
 
+            if (selectedRole === 'player') {
+                const preferenceResult = await upsertCurrentPlayerPreference({
+                    preferredLeagues: preferredLevel ? [preferredLevel] : [],
+                    preferredLocations: [preferredLocation],
+                })
+
+                if (!preferenceResult.ok) {
+                    setStatusType('error')
+                    setStatusMessage(preferenceResult.message ?? 'Unable to save your preferences. Try again.')
+                    return
+                }
+            }
+
             setStatusType('success')
             setStatusMessage('Profile saved. Redirecting...')
             setTimeout(() => {
@@ -326,6 +343,31 @@ const CompleteProfilePage = () => {
                                 Add another position
                             </button>
                         )}
+
+                        <label htmlFor="preferredLevel">Preferred level of play</label>
+                        <select
+                            id="preferredLevel"
+                            name="preferredLevel"
+                            value={preferredLevel}
+                            onChange={(event) => setPreferredLevel(event.target.value)}
+                        >
+                            <option value="">Select a level</option>
+                            {levelOfPlayOptions.map((levelOption) => (
+                                <option key={levelOption.value} value={levelOption.value}>
+                                    {levelOption.label}
+                                </option>
+                            ))}
+                        </select>
+
+                        <label htmlFor="preferredLocation">Preferred location</label>
+                        <input
+                            id="preferredLocation"
+                            name="preferredLocation"
+                            type="text"
+                            placeholder="City, state, or region"
+                            value={preferredLocation}
+                            onChange={(event) => setPreferredLocation(event.target.value)}
+                        />
 
                         <label htmlFor="height">Height</label>
                         <div className="height-unit-toggle" role="group" aria-label="Height unit">

@@ -285,6 +285,7 @@ export const upsertProfile = async ({ role, birthday, position, height, bio, vid
     const { error: upsertPlayerError } = await supabase.from('player').upsert(
         {
             user_id: user.id,
+            display_name: nameFromMetadata,
             birthday: normalizeText(birthday),
             position: normalizeText(position),
             height: parsedHeight,
@@ -340,6 +341,15 @@ export const updateProfileIdentity = async ({ fullName }: IdentityUpdatePayload)
 
     if (authUpdateError) {
         return { ok: false, message: authUpdateError.message }
+    }
+
+    const { error: playerUpdateError } = await supabase
+        .from('player')
+        .update({ display_name: normalizedName })
+        .eq('user_id', user.id)
+
+    if (playerUpdateError) {
+        return { ok: false, message: playerUpdateError.message }
     }
 
     return { ok: true }

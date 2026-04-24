@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import MatchScoreBar from '../components/MatchScoreBar'
+import { calculateMatchScore, splitPositionText, type MatchScoreBreakdown } from '../lib/matchScore'
+import { levelOfPlayOptions } from '../lib/preferenceOptions'
 import SiteNavbar from '../components/SiteNavbar'
+import { getDistanceMiles } from '../services/distance'
+import {
+    getCurrentPlayerPreference,
+    getTeamPreferences,
+    upsertTeamPreference,
+    type TeamPreferenceRecord,
+} from '../services/preference'
 import {
     createApplication,
     getApplicationsForCurrentUser,
@@ -32,16 +42,35 @@ const listingPositionOptions = [
     'Striker',
 ]
 
+type ListingMatchSignal = {
+    scoreBreakdown: MatchScoreBreakdown
+    matchedLocation: string | null
+}
+
+const parseLocationsInput = (value: string) =>
+    value
+        .split(',')
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)
+
 const ListingsPage = () => {
     const [role, setRole] = useState<UserRole | null>(null)
     const [teams, setTeams] = useState<TeamRecord[]>([])
     const [listings, setListings] = useState<ListingRecord[]>([])
+    const [listingMatchSignals, setListingMatchSignals] = useState<Record<string, ListingMatchSignal>>({})
     const [applicationMessages, setApplicationMessages] = useState<Record<string, string>>({})
     const [applicationStatuses, setApplicationStatuses] = useState<Record<string, ApplicationStatus>>({})
+    const [teamPreferencesByTeamId, setTeamPreferencesByTeamId] = useState<Record<string, TeamPreferenceRecord>>({})
     const [isLoading, setIsLoading] = useState(true)
     const [isCreatingListing, setIsCreatingListing] = useState(false)
+    const [isSavingTeamPreference, setIsSavingTeamPreference] = useState(false)
     const [activeApplyListingId, setActiveApplyListingId] = useState<string | null>(null)
     const [activeListingStatusId, setActiveListingStatusId] = useState<string | null>(null)
+    const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
+    const [editingTeamName, setEditingTeamName] = useState('')
+    const [editingPreferredPositions, setEditingPreferredPositions] = useState<string[]>([])
+    const [editingPreferredLevel, setEditingPreferredLevel] = useState('')
+    const [editingPreferredLocationsInput, setEditingPreferredLocationsInput] = useState('')
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
 
@@ -53,7 +82,7 @@ const ListingsPage = () => {
         { label: 'Profile', href: '/profile' },
     ]
 
-    const totalApplicants = listings.reduce((sum, listing) => sum + listing.applicants, 0)
+
 
     useEffect(() => {
         const loadPage = async () => {
@@ -82,12 +111,25 @@ const ListingsPage = () => {
                 return
             }
 
-            setListings(listingResult.listings ?? [])
+            const availableListings = listingResult.listings ?? []
+            const uniqueTeamIds = [...new Set(availableListings.map((listing) => listing.teamId))]
+
+            const teamPreferencesResult = await getTeamPreferences(uniqueTeamIds)
+            const teamPreferenceLookup = teamPreferencesResult.ok
+                ? teamPreferencesResult.preferencesByTeamId ?? {}
+                : {}
+
+            setListings(availableListings)
+            setListingMatchSignals({})
             setApplicationMessages({})
             setApplicationStatuses({})
+            setTeamPreferencesByTeamId(teamPreferenceLookup)
 
             if (currentRole === 'player') {
-                const applicationResult = await getApplicationsForCurrentUser('player')
+                const [applicationResult, playerPreferenceResult] = await Promise.all([
+                    getApplicationsForCurrentUser('player'),
+                    getCurrentPlayerPreference(),
+                ])
 
                 if (!applicationResult.ok) {
                     setStatusType('error')
@@ -105,6 +147,63 @@ const ListingsPage = () => {
                 )
 
                 setApplicationStatuses(statusesByListing)
+
+                const playerPositions = splitPositionText(profileResult.profile.position)
+                const playerLevel = playerPreferenceResult.ok
+                    ? playerPreferenceResult.preference?.preferredLeagues[0] ?? null
+                    : null
+                const playerLocation = playerPreferenceResult.ok
+                    ? playerPreferenceResult.preference?.preferredLocations[0] ?? null
+                    : null
+
+                const listingScores = await Promise.all(
+                    availableListings.map(async (listing) => {
+                        const teamPreference = teamPreferenceLookup[listing.teamId]
+
+                        const preferredPositions =
+                            teamPreference?.preferredPositions.length
+                                ? teamPreference.preferredPositions
+                                : [listing.position]
+
+                        const preferredPlayerLevels = teamPreference?.preferredPlayerLevels ?? []
+
+                        const preferredPlayerLocations =
+                            teamPreference?.preferredPlayerLocations.length
+                                ? teamPreference.preferredPlayerLocations
+                                : listing.teamLocation.trim()
+                                    ? [listing.teamLocation]
+                                    : []
+
+                        const distanceResult = await getDistanceMiles(playerLocation, preferredPlayerLocations)
+
+                        return {
+                            listingId: listing.id,
+                            matchedLocation: distanceResult.destination,
+                            scoreBreakdown: calculateMatchScore(
+                                {
+                                    positions: playerPositions,
+                                    levelOfPlay: playerLevel,
+                                },
+                                {
+                                    preferredPositions,
+                                    preferredPlayerLevels,
+                                    preferredPlayerLocations,
+                                    distanceMiles: distanceResult.distanceMiles,
+                                },
+                            ),
+                        }
+                    }),
+                )
+
+                setListingMatchSignals(
+                    listingScores.reduce<Record<string, ListingMatchSignal>>((accumulator, listingScore) => {
+                        accumulator[listingScore.listingId] = {
+                            scoreBreakdown: listingScore.scoreBreakdown,
+                            matchedLocation: listingScore.matchedLocation,
+                        }
+                        return accumulator
+                    }, {}),
+                )
             }
 
             if (currentRole === 'manager') {
@@ -244,6 +343,63 @@ const ListingsPage = () => {
         setStatusMessage('Listing status updated.')
     }
 
+    const handleOpenTeamPreferenceEditor = (listing: ListingRecord) => {
+        const existingPreference = teamPreferencesByTeamId[listing.teamId]
+
+        setEditingTeamId(listing.teamId)
+        setEditingTeamName(listing.teamName)
+        setEditingPreferredPositions(
+            existingPreference?.preferredPositions.length
+                ? existingPreference.preferredPositions
+                : [listing.position],
+        )
+        setEditingPreferredLevel(existingPreference?.preferredPlayerLevels[0] ?? '')
+        setEditingPreferredLocationsInput(
+            existingPreference?.preferredPlayerLocations.length
+                ? existingPreference.preferredPlayerLocations.join(', ')
+                : listing.teamLocation,
+        )
+    }
+
+    const handleSaveTeamPreference = async () => {
+        if (!editingTeamId || role !== 'manager') {
+            return
+        }
+
+        setStatusMessage(null)
+        setStatusType(null)
+        setIsSavingTeamPreference(true)
+
+        const result = await upsertTeamPreference(editingTeamId, {
+            preferredPositions: editingPreferredPositions,
+            preferredPlayerLevels: editingPreferredLevel ? [editingPreferredLevel] : [],
+            preferredPlayerLocations: parseLocationsInput(editingPreferredLocationsInput),
+        })
+
+        setIsSavingTeamPreference(false)
+
+        if (!result.ok) {
+            setStatusType('error')
+            setStatusMessage(result.message ?? 'Unable to save team preferences.')
+            return
+        }
+
+        setTeamPreferencesByTeamId((previous) => ({
+            ...previous,
+            [editingTeamId]: {
+                teamId: editingTeamId,
+                preferredPositions: editingPreferredPositions,
+                preferredPlayerLevels: editingPreferredLevel ? [editingPreferredLevel] : [],
+                preferredPlayerLocations: parseLocationsInput(editingPreferredLocationsInput),
+            },
+        }))
+
+        setEditingTeamId(null)
+        setEditingTeamName('')
+        setStatusType('success')
+        setStatusMessage('Team preferences saved. Match scores now use the updated preferences.')
+    }
+
     return (
         <main className="app-page listings-page">
             <section className="app-hero listings-page-hero">
@@ -259,142 +415,222 @@ const ListingsPage = () => {
                 </div>
             </section>
 
-            <section className="app-section listings-page-grid" aria-label="Listing modules">
-                <article className="app-card">
-                    <p className="card-kicker">Snapshot</p>
-                    <h3>{role === 'manager' ? 'Your active postings' : 'Open opportunities'}</h3>
-                    <p>
-                        {isLoading
-                            ? 'Loading listings from the database.'
-                            : role === 'manager'
-                                ? 'Review listing volume and applicant momentum.'
-                                : 'Scan open opportunities and submit targeted applications.'}
-                    </p>
-                    <div className="empty-slot">
-                        <strong>{listings.length}</strong> listings visible · <strong>{totalApplicants}</strong> total applicants
-                    </div>
-                </article>
-
-                <article className="app-card">
-                    <p className="card-kicker">Actions</p>
-                    <h3>{role === 'manager' ? 'Create listing' : 'Application flow'}</h3>
-                    {role === 'manager' ? (
-                        teams.length === 0 ? (
-                            <p>Create at least one team first before posting listings.</p>
-                        ) : (
-                            <form className="auth-form" onSubmit={handleListingCreate} noValidate>
-                                <label htmlFor="listing-team">Team</label>
-                                <select id="listing-team" name="teamId" required>
-                                    <option value="">Select a team</option>
-                                    {teams.map((team) => (
-                                        <option key={team.id} value={team.id}>
-                                            {team.name}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                <label htmlFor="listing-position">Position</label>
-                                <select id="listing-position" name="position" required>
-                                    <option value="">Select one position</option>
-                                    {listingPositionOptions.map((positionOption) => (
-                                        <option key={positionOption} value={positionOption}>
-                                            {positionOption}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="auth-helper-text">Choose one position per listing.</p>
-
-                                <label htmlFor="listing-description">Description</label>
-                                <textarea id="listing-description" name="description" rows={3} />
-
-                                <button className="primary-button" type="submit" disabled={isCreatingListing}>
-                                    {isCreatingListing ? 'Creating listing...' : 'Create listing'}
-                                </button>
-                            </form>
-                        )
-                    ) : (
-                        <p>Apply directly from a listing card, then track status from the same place.</p>
-                    )}
-                </article>
-
-                <article className="app-card app-card-wide">
-                    <p className="card-kicker">Listing Board</p>
-                    <h3>{role === 'manager' ? 'Listings you manage' : 'Available opportunities'}</h3>
-                    <p>
-                        Each listing includes the team posting it, role title, short role brief, and applicant momentum.
-                    </p>
-                    <div className="listing-board">
-                        {listings.map((listing) => (
-                            <article className="listing-entry" key={listing.id}>
-                                <header className="listing-entry-header">
-                                    <p className="listing-team">{listing.teamName}</p>
-                                    <p className="listing-applicants">
-                                        {listing.applicants} {listing.applicants === 1 ? 'applicant' : 'applicants'}
-                                    </p>
-                                </header>
-                                <h4>{listing.position}</h4>
-                                <p className={`status-chip ${listing.status}`}>Listing {listing.status}</p>
-                                <p>{listing.description}</p>
-
-                                {role === 'player' && (
-                                    applicationStatuses[listing.id] ? (
-                                        <p className={`status-chip ${applicationStatuses[listing.id]}`}>
-                                            Application {applicationStatuses[listing.id]}
+            <section className="app-section listings-page-grid-custom" aria-label="Listing modules">
+                <div className="listing-board-wrapper">
+                    <article className="app-card app-card-wide">
+                        <p className="card-kicker">Listing Board</p>
+                        <h3>{role === 'manager' ? 'Listings you manage' : 'Available opportunities'}</h3>
+                        <p>
+                            Each listing includes the team posting it, role title, short role brief, and applicant momentum.
+                        </p>
+                        <div className="listing-board">
+                            {listings.map((listing) => (
+                                <article className="listing-entry" key={listing.id}>
+                                    <header className="listing-entry-header">
+                                        <p className="listing-team">{listing.teamName}</p>
+                                        <p className="listing-applicants">
+                                            {listing.applicants} {listing.applicants === 1 ? 'applicant' : 'applicants'}
                                         </p>
-                                    ) : (
-                                        <>
-                                            <label htmlFor={`listing-message-${listing.id}`}>Message (optional)</label>
-                                            <textarea
-                                                id={`listing-message-${listing.id}`}
-                                                rows={2}
-                                                value={applicationMessages[listing.id] ?? ''}
-                                                onChange={(event) =>
-                                                    setApplicationMessages((previous) => ({
-                                                        ...previous,
-                                                        [listing.id]: event.target.value,
-                                                    }))
-                                                }
-                                                placeholder="Share a quick note with the manager."
+                                    </header>
+                                    <h4>{listing.position}</h4>
+                                    <p className={`status-chip ${listing.status}`}>Listing {listing.status}</p>
+                                    <p>{listing.description}</p>
+
+                                    {role === 'player' && listingMatchSignals[listing.id] && (
+                                        <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/35 p-3">
+                                            <MatchScoreBar
+                                                score={listingMatchSignals[listing.id].scoreBreakdown.score}
+                                                label="Final match"
                                             />
+                                            {listingMatchSignals[listing.id].matchedLocation && (
+                                                <p className="mt-2 mb-0 text-xs text-slate-300">
+                                                    Closest matched location: {listingMatchSignals[listing.id].matchedLocation}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {role === 'player' && (
+                                        applicationStatuses[listing.id] ? (
+                                            <p className={`status-chip ${applicationStatuses[listing.id]}`}>
+                                                Application {applicationStatuses[listing.id]}
+                                            </p>
+                                        ) : (
+                                            <>
+                                                <label htmlFor={`listing-message-${listing.id}`}>Message (optional)</label>
+                                                <textarea
+                                                    id={`listing-message-${listing.id}`}
+                                                    rows={2}
+                                                    value={applicationMessages[listing.id] ?? ''}
+                                                    onChange={(event) =>
+                                                        setApplicationMessages((previous) => ({
+                                                            ...previous,
+                                                            [listing.id]: event.target.value,
+                                                        }))
+                                                    }
+                                                    placeholder="Share a quick note with the manager."
+                                                />
+                                                <button
+                                                    className="secondary-button"
+                                                    type="button"
+                                                    onClick={() => void handleApply(listing)}
+                                                    disabled={activeApplyListingId === listing.id}
+                                                >
+                                                    {activeApplyListingId === listing.id ? 'Submitting...' : 'Apply'}
+                                                </button>
+                                            </>
+                                        )
+                                    )}
+
+                                    {role === 'manager' && (
+                                        <>
                                             <button
                                                 className="secondary-button"
                                                 type="button"
-                                                onClick={() => void handleApply(listing)}
-                                                disabled={activeApplyListingId === listing.id}
+                                                onClick={() => handleOpenTeamPreferenceEditor(listing)}
                                             >
-                                                {activeApplyListingId === listing.id ? 'Submitting...' : 'Apply'}
+                                                Edit team preferences
                                             </button>
+                                            <div className="role-switcher" role="group" aria-label="Edit listing status">
+                                                <button
+                                                    className={`secondary-button role-switcher-button ${listing.status === 'open' ? 'active' : ''}`}
+                                                    type="button"
+                                                    onClick={() => void handleUpdateListingStatus(listing, 'open')}
+                                                    disabled={activeListingStatusId === listing.id}
+                                                >
+                                                    Open
+                                                </button>
+                                                <button
+                                                    className={`secondary-button role-switcher-button ${listing.status === 'closed' ? 'active' : ''}`}
+                                                    type="button"
+                                                    onClick={() => void handleUpdateListingStatus(listing, 'closed')}
+                                                    disabled={activeListingStatusId === listing.id}
+                                                >
+                                                    Closed
+                                                </button>
+                                            </div>
                                         </>
-                                    )
-                                )}
+                                    )}
+                                </article>
+                            ))}
 
-                                {role === 'manager' && (
-                                    <div className="role-switcher" role="group" aria-label="Edit listing status">
-                                        <button
-                                            className={`secondary-button role-switcher-button ${listing.status === 'open' ? 'active' : ''}`}
-                                            type="button"
-                                            onClick={() => void handleUpdateListingStatus(listing, 'open')}
-                                            disabled={activeListingStatusId === listing.id}
-                                        >
-                                            Open
-                                        </button>
-                                        <button
-                                            className={`secondary-button role-switcher-button ${listing.status === 'closed' ? 'active' : ''}`}
-                                            type="button"
-                                            onClick={() => void handleUpdateListingStatus(listing, 'closed')}
-                                            disabled={activeListingStatusId === listing.id}
-                                        >
-                                            Closed
-                                        </button>
-                                    </div>
-                                )}
-                            </article>
-                        ))}
+                            {!isLoading && listings.length === 0 && <div className="empty-slot">No listings found.</div>}
+                        </div>
+                    </article>
+                </div>
+                <div className="listing-create-wrapper">
+                    <article className="app-card">
+                        <p className="card-kicker">Actions</p>
+                        <h3>{role === 'manager' ? 'Create listing' : 'Application flow'}</h3>
+                        {role === 'manager' ? (
+                            teams.length === 0 ? (
+                                <p>Create at least one team first before posting listings.</p>
+                            ) : (
+                                <form className="auth-form" onSubmit={handleListingCreate} noValidate>
+                                    <label htmlFor="listing-team">Team</label>
+                                    <select id="listing-team" name="teamId" required>
+                                        <option value="">Select a team</option>
+                                        {teams.map((team) => (
+                                            <option key={team.id} value={team.id}>
+                                                {team.name}
+                                            </option>
+                                        ))}
+                                    </select>
 
-                        {!isLoading && listings.length === 0 && <div className="empty-slot">No listings found.</div>}
-                    </div>
-                </article>
+                                    <label htmlFor="listing-position">Position</label>
+                                    <select id="listing-position" name="position" required>
+                                        <option value="">Select one position</option>
+                                        {listingPositionOptions.map((positionOption) => (
+                                            <option key={positionOption} value={positionOption}>
+                                                {positionOption}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="auth-helper-text">Choose one position per listing.</p>
+
+                                    <label htmlFor="listing-description">Description</label>
+                                    <textarea id="listing-description" name="description" rows={3} />
+
+                                    <button className="primary-button" type="submit" disabled={isCreatingListing}>
+                                        {isCreatingListing ? 'Creating listing...' : 'Create listing'}
+                                    </button>
+                                </form>
+                            )
+                        ) : (
+                            <p>Apply directly from a listing card, then track status from the same place.</p>
+                        )}
+                    </article>
+                </div>
             </section>
+
+            {role === 'manager' && editingTeamId && (
+                <section className="app-section" aria-label="Edit team preferences">
+                    <article className="app-card">
+                        <p className="card-kicker">Team Preferences</p>
+                        <h3>{editingTeamName}</h3>
+
+                        <label htmlFor="preferred-positions">Preferred positions</label>
+                        <select
+                            id="preferred-positions"
+                            multiple
+                            value={editingPreferredPositions}
+                            onChange={(event) => {
+                                const selectedValues = Array.from(event.target.selectedOptions).map((option) => option.value)
+                                setEditingPreferredPositions(selectedValues)
+                            }}
+                        >
+                            {listingPositionOptions.map((positionOption) => (
+                                <option key={positionOption} value={positionOption}>
+                                    {positionOption}
+                                </option>
+                            ))}
+                        </select>
+
+                        <label htmlFor="preferred-level">Preferred level of play</label>
+                        <select
+                            id="preferred-level"
+                            value={editingPreferredLevel}
+                            onChange={(event) => setEditingPreferredLevel(event.target.value)}
+                        >
+                            <option value="">Select a level</option>
+                            {levelOfPlayOptions.map((levelOption) => (
+                                <option key={levelOption.value} value={levelOption.value}>
+                                    {levelOption.label}
+                                </option>
+                            ))}
+                        </select>
+
+                        <label htmlFor="preferred-locations">Preferred locations</label>
+                        <input
+                            id="preferred-locations"
+                            type="text"
+                            value={editingPreferredLocationsInput}
+                            onChange={(event) => setEditingPreferredLocationsInput(event.target.value)}
+                            placeholder="City, State, Country"
+                        />
+                        <p className="auth-helper-text">Use commas to add multiple preferred locations.</p>
+
+                        <div className="role-switcher" role="group" aria-label="Team preference actions">
+                            <button
+                                className="secondary-button role-switcher-button"
+                                type="button"
+                                onClick={() => void handleSaveTeamPreference()}
+                                disabled={isSavingTeamPreference}
+                            >
+                                {isSavingTeamPreference ? 'Saving...' : 'Save preferences'}
+                            </button>
+                            <button
+                                className="secondary-button role-switcher-button"
+                                type="button"
+                                onClick={() => setEditingTeamId(null)}
+                                disabled={isSavingTeamPreference}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </article>
+                </section>
+            )}
 
             {statusMessage && (
                 <section className="app-section" aria-label="Listings status">
