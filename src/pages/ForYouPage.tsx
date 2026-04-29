@@ -315,10 +315,6 @@ const ForYouPage = () => {
 
                                         <MatchScoreBar score={entry.scoreBreakdown.score} label="Fit score" />
 
-                                        <p className="mt-3 mb-0 text-xs text-slate-300">
-                                            Position {entry.scoreBreakdown.categoryScores.position}% · Level {entry.scoreBreakdown.categoryScores.levelOfPlay}% · Location {entry.scoreBreakdown.categoryScores.location}%
-                                        </p>
-
                                         {entry.matchedLocation && (
                                             <p className="mt-2 mb-0 text-xs text-slate-400">Closest matched location: {entry.matchedLocation}</p>
                                         )}
@@ -368,10 +364,6 @@ const ForYouPage = () => {
                                                         </div>
 
                                                         <MatchScoreBar score={playerScore.scoreBreakdown.score} label="Fit score" />
-
-                                                        <p className="mt-2 mb-0 text-xs text-slate-300">
-                                                            Position {playerScore.scoreBreakdown.categoryScores.position}% · Level {playerScore.scoreBreakdown.categoryScores.levelOfPlay}% · Location {playerScore.scoreBreakdown.categoryScores.location}%
-                                                        </p>
 
                                                         {playerScore.matchedLocation && (
                                                             <p className="mt-1 mb-0 text-xs text-slate-400">
